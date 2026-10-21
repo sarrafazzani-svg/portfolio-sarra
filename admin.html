@@ -1,0 +1,963 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - Portfolio Manager</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        /* Use Portfolio Color Scheme */
+        :root {
+            --admin-primary: #000000;
+            --admin-accent: #667eea;
+            --admin-light: #f3f3f3;
+            --admin-border: #e0e0e0;
+        }
+
+        body {
+            background: white;
+        }
+
+        /* Admin Layout */
+        .admin-wrapper {
+            min-height: 100vh;
+        }
+
+        .admin-sidebar {
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 250px;
+            height: 100vh;
+            background: var(--admin-primary);
+            color: white;
+            padding: 30px 20px;
+            overflow-y: auto;
+            z-index: 1000;
+        }
+
+        .admin-sidebar h2 {
+            color: white;
+            margin: 0 0 30px 0;
+            font-size: 1.5rem;
+            border-bottom: 2px solid var(--admin-accent);
+            padding-bottom: 15px;
+        }
+
+        .admin-nav {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .admin-nav-item {
+            padding: 12px 15px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border: none;
+            text-align: left;
+            font-weight: 500;
+        }
+
+        .admin-nav-item.active {
+            background: var(--admin-accent);
+            color: white;
+        }
+
+        .admin-nav-item:hover {
+            background: var(--admin-accent);
+        }
+
+        .admin-main {
+            margin-left: 250px;
+            min-height: 100vh;
+            background: var(--admin-light);
+        }
+
+        .admin-header {
+            background: white;
+            padding: 20px 30px;
+            border-bottom: 1px solid var(--admin-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .admin-header h1 {
+            margin: 0;
+            color: var(--admin-primary);
+            font-size: 1.8rem;
+        }
+
+        .admin-user-section {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .admin-user-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 15px;
+            background: var(--admin-light);
+            border-radius: 20px;
+        }
+
+        .admin-logout-btn {
+            background: #f44336;
+            color: white;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .admin-logout-btn:hover {
+            background: #da190b;
+            transform: translateY(-2px);
+        }
+
+        .admin-content {
+            padding: 30px;
+            max-width: 1400px;
+        }
+
+        .admin-section {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .admin-section h2 {
+            color: var(--admin-primary);
+            margin: 0 0 20px 0;
+            font-size: 1.5rem;
+        }
+
+        /* Projects List */
+        .projects-list {
+            display: grid;
+            gap: 15px;
+        }
+
+        .project-card {
+            display: grid;
+            grid-template-columns: 100px 1fr auto;
+            gap: 20px;
+            align-items: center;
+            padding: 15px;
+            border: 1px solid var(--admin-border);
+            border-radius: 8px;
+            background: #f8f9fa;
+            transition: all 0.3s;
+        }
+
+        .project-card:hover {
+            border-color: var(--admin-accent);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .project-thumbnail {
+            width: 100px;
+            height: 100px;
+            border-radius: 8px;
+            object-fit: cover;
+            background: var(--admin-border);
+        }
+
+        .project-info h3 {
+            margin: 0 0 5px 0;
+            color: var(--admin-primary);
+        }
+
+        .project-info p {
+            margin: 3px 0;
+            color: #666;
+            font-size: 0.85rem;
+        }
+
+        .project-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn-action {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.85rem;
+            transition: all 0.3s;
+        }
+
+        .btn-edit {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .btn-edit:hover {
+            background: #45a049;
+        }
+
+        .btn-delete {
+            background: #f44336;
+            color: white;
+        }
+
+        .btn-delete:hover {
+            background: #da190b;
+        }
+
+        /* Form */
+        .admin-form {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .admin-form.full {
+            grid-template-columns: 1fr;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .form-group label {
+            font-weight: 600;
+            color: var(--admin-primary);
+            font-size: 0.95rem;
+        }
+
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            padding: 10px 12px;
+            border: 1px solid var(--admin-border);
+            border-radius: 6px;
+            font-family: inherit;
+            font-size: 0.95rem;
+            transition: all 0.3s;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: var(--admin-accent);
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .form-group textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        .form-group small {
+            color: #999;
+            font-size: 0.8rem;
+        }
+
+        .form-buttons {
+            grid-column: 1 / -1;
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .btn-submit {
+            background: var(--admin-accent);
+            color: white;
+            padding: 10px 25px;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-submit:hover {
+            background: #556cd6;
+            transform: translateY(-2px);
+        }
+
+        .btn-cancel {
+            background: var(--admin-border);
+            color: #333;
+            padding: 10px 25px;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-cancel:hover {
+            background: #d0d0d0;
+        }
+
+        .btn-add-new {
+            background: var(--admin-accent);
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-bottom: 20px;
+            transition: all 0.3s;
+        }
+
+        .btn-add-new:hover {
+            background: #556cd6;
+            transform: translateY(-2px);
+        }
+
+        /* Login */
+        .login-page {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #f3f3f3;
+        }
+
+        .login-box {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+            width: 100%;
+            max-width: 400px;
+        }
+
+        .login-box h2 {
+            text-align: center;
+            color: var(--admin-primary);
+            margin: 0 0 30px 0;
+            font-size: 1.8rem;
+        }
+
+        .login-form {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .login-form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .login-form-group label {
+            font-weight: 600;
+            color: var(--admin-primary);
+        }
+
+        .login-form-group input {
+            padding: 10px 12px;
+            border: 1px solid var(--admin-border);
+            border-radius: 6px;
+            font-size: 0.95rem;
+        }
+
+        .login-form-group input:focus {
+            outline: none;
+            border-color: var(--admin-accent);
+        }
+
+        .login-btn {
+            background: var(--admin-accent);
+            color: white;
+            padding: 10px;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+        .login-btn:hover {
+            background: #556cd6;
+        }
+
+        .message {
+            padding: 12px 15px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            font-weight: 600;
+        }
+
+        .message.success {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .message.error {
+            background: #f44336;
+            color: white;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #999;
+        }
+
+        .tab-pane {
+            display: none;
+        }
+
+        .tab-pane.active {
+            display: block;
+        }
+
+        /* Toast Notification */
+        .admin-toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 12px 20px;
+            background: #4CAF50;
+            color: white;
+            border-radius: 6px;
+            font-weight: 600;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            animation: slideIn 0.3s ease;
+            z-index: 2000;
+        }
+
+        .admin-toast.show {
+            display: block !important;
+        }
+
+        .admin-toast.error {
+            background: #f44336;
+        }
+
+        .admin-toast.warning {
+            background: #ff9800;
+        }
+
+        .admin-toast.info {
+            background: #667eea;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        /* Image Preview Styles */
+        #imagesPreview img {
+            max-width: 100px;
+            height: 100px;
+            border-radius: 6px;
+            object-fit: cover;
+            border: 2px solid var(--admin-border);
+        }
+
+        /* Messages Styles */
+        .messages-list {
+            display: grid;
+            gap: 15px;
+        }
+
+        .message-card {
+            border: 1px solid var(--admin-border);
+            border-radius: 8px;
+            padding: 20px;
+            background: #f8f9fa;
+            transition: all 0.3s;
+        }
+
+        .message-card:hover {
+            border-color: var(--admin-accent);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .message-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid var(--admin-border);
+        }
+
+        .message-header h3 {
+            margin: 0 0 8px 0;
+            color: var(--admin-primary);
+            font-size: 1.1rem;
+        }
+
+        .message-email {
+            margin: 5px 0;
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .message-date {
+            margin: 5px 0 0 0;
+            color: #999;
+            font-size: 0.85rem;
+        }
+
+        .message-content {
+            margin-bottom: 15px;
+            color: #333;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .message-content p {
+            margin: 0;
+        }
+
+        .message-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .btn-reply {
+            background: var(--admin-accent);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: all 0.3s;
+            display: inline-block;
+        }
+
+        .btn-reply:hover {
+            background: #556cd6;
+            transform: translateY(-2px);
+        }
+
+        .btn-copy-email {
+            background: #2196F3;
+            color: white;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-copy-email:hover {
+            background: #0b7dda;
+            transform: translateY(-2px);
+        }
+
+        .btn-delete-message {
+            background: #f44336;
+            color: white;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-delete-message:hover {
+            background: #da190b;
+        }
+
+        @media (max-width: 768px) {
+            .admin-sidebar {
+                width: 70px;
+                padding: 15px;
+            }
+
+            .admin-sidebar h2 {
+                font-size: 1rem;
+            }
+
+            .admin-nav-item {
+                padding: 10px;
+                font-size: 0.8rem;
+            }
+
+            .admin-main {
+                margin-left: 70px;
+            }
+
+            .admin-content {
+                padding: 15px;
+            }
+
+            .admin-form {
+                grid-template-columns: 1fr;
+            }
+
+            .project-card {
+                grid-template-columns: 80px 1fr;
+                gap: 15px;
+            }
+
+            .project-thumbnail {
+                width: 80px;
+                height: 80px;
+            }
+
+            .project-actions {
+                grid-column: 1 / -1;
+            }
+        }
+
+        /* Social Links Styles */
+        .social-link-item {
+            display: grid;
+            grid-template-columns: 1fr 1fr auto;
+            gap: 15px;
+            align-items: flex-end;
+            padding: 15px;
+            border: 1px solid var(--admin-border);
+            border-radius: 8px;
+            background: #f8f9fa;
+            margin-bottom: 12px;
+        }
+
+        .social-link-item .form-group {
+            margin: 0;
+        }
+
+        .social-link-item .form-group label {
+            font-size: 0.9rem;
+        }
+
+        .btn-remove-social {
+            background: #f44336;
+            color: white;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            align-self: flex-end;
+            height: 38px;
+        }
+
+        .btn-remove-social:hover {
+            background: #da190b;
+        }
+    </style>
+</head>
+<body>
+    <!-- Login Page -->
+    <div id="loginPage" class="login-page">
+        <div class="login-box">
+            <h2>🔐 Admin</h2>
+            <form id="loginForm" class="login-form">
+                <div class="login-form-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" placeholder="Enter username" required>
+                </div>
+                <div class="login-form-group">
+                    <label for="password">Password</label>
+                    <div style="position: relative;">
+                        <input type="password" id="password" placeholder="Enter password" required>
+                        <button type="button" class="toggle-password-btn" onclick="togglePassword('password')" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; font-size: 1.2rem;">👁️</button>
+                    </div>
+                </div>
+                <button type="submit" class="login-btn">Login</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Admin Dashboard -->
+    <div id="adminDashboard" class="admin-wrapper" style="display: none;">
+        <!-- Sidebar -->
+        <aside class="admin-sidebar">
+            <h2>Portfolio</h2>
+            <nav class="admin-nav">
+                <button class="admin-nav-item" onclick="showSection('profile')">👤 Profile</button>
+                <button class="admin-nav-item" onclick="showSection('contacts')">📞 Contacts</button>
+                <button class="admin-nav-item active" onclick="showSection('projects')">📋 Projects</button>
+                <button class="admin-nav-item" onclick="showSection('messages')">💬 Messages</button>
+                <button class="admin-nav-item" onclick="showSection('add')">➕ Add New</button>
+                <button class="admin-nav-item" onclick="showSection('security')">🔐 Security</button>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="admin-main">
+            <!-- Header -->
+            <div class="admin-header">
+                <h1>Admin Dashboard</h1>
+                <div class="admin-user-section">
+                    <div class="admin-user-info">
+                        👤 <span id="currentUser">Admin</span>
+                    </div>
+                    <button class="admin-logout-btn" onclick="logout()">Logout</button>
+                </div>
+            </div>
+
+            <!-- Content -->
+            <div class="admin-content">
+                <!-- Profile Section -->
+                <div id="profile" class="tab-pane">
+                    <div class="admin-section">
+                        <h2>👤 Edit Profile</h2>
+                        <form id="profileForm" class="admin-form full">
+                            <div class="form-group">
+                                <label for="profileName">Your Name *</label>
+                                <input type="text" id="profileName" placeholder="Your full name" required>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="profilePosition">Position/Title *</label>
+                                <input type="text" id="profilePosition" placeholder="e.g., Master Multimedia Student, 3D Artist, Designer" required>
+                                <small>This appears in the portfolio hero section</small>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="profileBio">Bio/About *</label>
+                                <textarea id="profileBio" placeholder="Tell visitors about yourself" required></textarea>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="profileEmail">Email *</label>
+                                <input type="email" id="profileEmail" placeholder="your@email.com" required>
+                            </div>
+
+                            <div class="form-buttons">
+                                <button type="submit" class="btn-submit">Save Profile</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Contacts Section -->
+                <div id="contacts" class="tab-pane">
+                    <div class="admin-section">
+                        <h2>📞 Contact Settings</h2>
+                        
+                        <form id="contactsForm" class="admin-form full">
+                            <!-- Email Section -->
+                            <div style="margin-bottom: 30px; padding-bottom: 30px; border-bottom: 1px solid var(--admin-border);">
+                                <h3 style="color: var(--admin-primary); margin: 0 0 15px 0;">Email</h3>
+                                <div class="form-group">
+                                    <label for="contactEmail">Email Address *</label>
+                                    <input type="email" id="contactEmail" placeholder="your@email.com" required>
+                                </div>
+                            </div>
+
+                            <!-- Location Section -->
+                            <div style="margin-bottom: 30px; padding-bottom: 30px; border-bottom: 1px solid var(--admin-border);">
+                                <h3 style="color: var(--admin-primary); margin: 0 0 15px 0;">Location (Optional)</h3>
+                                <div class="form-group">
+                                    <label for="contactLocation">Location</label>
+                                    <input type="text" id="contactLocation" placeholder="e.g., New York, USA">
+                                    <small>Leave empty to hide location from your portfolio</small>
+                                </div>
+                            </div>
+
+                            <!-- Social Media Section -->
+                            <div style="margin-bottom: 30px; padding-bottom: 30px; border-bottom: 1px solid var(--admin-border);">
+                                <h3 style="color: var(--admin-primary); margin: 0 0 15px 0;">Social Media Links</h3>
+                                <div id="socialLinksContainer"></div>
+                                <button type="button" class="btn-add-new" onclick="addSocialLink()" style="margin-top: 15px; margin-bottom: 0;">+ Add Social Link</button>
+                            </div>
+
+                            <div class="form-buttons">
+                                <button type="submit" class="btn-submit">Save Contact Settings</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Projects Section -->
+                <div id="projects" class="tab-pane active">
+                    <div class="admin-section">
+                        <h2>📊 All Projects</h2>
+                        <button class="btn-add-new" onclick="showSection('add')">+ Add New Project</button>
+                        <div id="projectsList" class="projects-list">
+                            <!-- Projects loaded here -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Messages Section -->
+                <div id="messages" class="tab-pane">
+                    <div class="admin-section">
+                        <h2>💬 Client Messages</h2>
+                        <div id="messagesList" class="messages-list">
+                            <!-- Messages loaded here -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Add Project Section -->
+                <div id="add" class="tab-pane">
+                    <div class="admin-section">
+                        <h2 id="formTitle">➕ Add New Project</h2>
+                        <form id="projectForm" class="admin-form full">
+                            <input type="hidden" id="editingProjectId" value="">
+                            
+                            <div class="form-group">
+                                <label for="projectTitle">Project Title *</label>
+                                <input type="text" id="projectTitle" placeholder="Project title" required>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="projectCategory">Category *</label>
+                                <input type="text" id="projectCategory" placeholder="e.g., Design, Animation, Photography" required>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="projectThumbnail">Thumbnail Image *</label>
+                                <input type="file" id="projectThumbnail" accept="image/*">
+                                <small>This image will appear in the carousel</small>
+                                <div id="thumbnailPreview" style="margin-top: 10px; display: none;">
+                                    <img src="" alt="Thumbnail preview" style="max-width: 150px; border-radius: 6px;">
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="projectImages">Project Images (Multiple) *</label>
+                                <input type="file" id="projectImages" accept="image/*" multiple>
+                                <small>Upload multiple images for the project gallery</small>
+                                <div id="imagesPreview" style="margin-top: 10px; display: flex; gap: 10px; flex-wrap: wrap;"></div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="projectOverview">Overview *</label>
+                                <textarea id="projectOverview" placeholder="Project overview" required></textarea>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="projectChallenge">Challenge *</label>
+                                <textarea id="projectChallenge" placeholder="Project challenge" required></textarea>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="projectSolution">Solution *</label>
+                                <textarea id="projectSolution" placeholder="Project solution" required></textarea>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="projectTools">Tools Used (comma-separated) *</label>
+                                <input type="text" id="projectTools" placeholder="e.g., Figma, Adobe XD, Photoshop" required>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="projectLink">Project Link (Instagram, Figma, etc.)</label>
+                                <input type="url" id="projectLink" placeholder="https://..." >
+                                <small>Add link to view the project online (optional)</small>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="projectVideo">Video/File (for Video Editing & 3D Projects)</label>
+                                <input type="file" id="projectVideo" accept="video/*,.zip,.rar">
+                                <small>Upload video file for video projects or 3D project file (optional)</small>
+                                <div id="videoPreview" style="margin-top: 10px; display: none;">
+                                    <video width="150" height="150" style="border-radius: 6px; object-fit: cover; border: 2px solid var(--admin-border);" controls></video>
+                                </div>
+                            </div>
+
+                            <div class="form-buttons">
+                                <button type="submit" class="btn-submit" id="submitBtn">Save Project</button>
+                                <button type="button" class="btn-cancel" onclick="resetForm()">Cancel</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Security Settings Section -->
+                <div id="security" class="tab-pane">
+                    <div class="admin-section">
+                        <h2>🔐 Security Settings</h2>
+                        <p style="color: #666; margin-bottom: 25px;">Manage your admin credentials securely. All passwords are encrypted on the server.</p>
+                        
+                        <!-- Change Username Section -->
+                        <div style="margin-bottom: 30px; padding-bottom: 30px; border-bottom: 1px solid var(--admin-border);">
+                            <h3 style="color: var(--admin-primary); margin-bottom: 15px;">Change Username</h3>
+                            <form id="changeUsernameForm" class="admin-form full">
+                                <div class="form-group">
+                                    <label for="currentPassword1">Current Password *</label>
+                                    <div style="position: relative;">
+                                        <input type="password" id="currentPassword1" placeholder="Enter your current password" required>
+                                        <button type="button" class="toggle-password-btn" onclick="togglePassword('currentPassword1')" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; font-size: 1.2rem;">👁️</button>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="newUsername">New Username *</label>
+                                    <input type="text" id="newUsername" placeholder="Enter new username" required>
+                                    <small>Username must be at least 3 characters long</small>
+                                </div>
+                                <div class="form-buttons">
+                                    <button type="submit" class="btn-submit">Update Username</button>
+                                </div>
+                            </form>
+                        </div>
+
+                        <!-- Change Password Section -->
+                        <div>
+                            <h3 style="color: var(--admin-primary); margin-bottom: 15px;">Change Password</h3>
+                            <form id="changePasswordForm" class="admin-form full">
+                                <div class="form-group">
+                                    <label for="currentPassword2">Current Password *</label>
+                                    <div style="position: relative;">
+                                        <input type="password" id="currentPassword2" placeholder="Enter your current password" required>
+                                        <button type="button" class="toggle-password-btn" onclick="togglePassword('currentPassword2')" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; font-size: 1.2rem;">👁️</button>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="newPassword">New Password *</label>
+                                    <div style="position: relative;">
+                                        <input type="password" id="newPassword" placeholder="Enter new password" required>
+                                        <button type="button" class="toggle-password-btn" onclick="togglePassword('newPassword')" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; font-size: 1.2rem;">👁️</button>
+                                    </div>
+                                    <small>Password must be at least 6 characters long</small>
+                                </div>
+                                <div class="form-group">
+                                    <label for="confirmPassword">Confirm New Password *</label>
+                                    <div style="position: relative;">
+                                        <input type="password" id="confirmPassword" placeholder="Confirm new password" required>
+                                        <button type="button" class="toggle-password-btn" onclick="togglePassword('confirmPassword')" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; font-size: 1.2rem;">👁️</button>
+                                    </div>
+                                </div>
+                                <div class="form-buttons">
+                                    <button type="submit" class="btn-submit">Update Password</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Toast Notification (like ZAIRA) -->
+    <div id="adminToast" class="admin-toast" style="display: none;"></div>
+
+    <script src="admin.js"></script>
+</body>
+</html>

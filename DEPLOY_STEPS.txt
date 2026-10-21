@@ -1,0 +1,68 @@
+========================================
+DEPLOY PORTFOLIO TO RENDER - QUICK GUIDE
+========================================
+
+Your portfolio is ready! Just follow these 5 simple steps:
+
+STEP 1: Initialize Git (one time only)
+------
+Open Command Prompt in this folder and run:
+git init
+git config user.name "Portfolio"
+git config user.email "portfolio@local"
+
+STEP 2: Add all files and commit
+------
+git add .
+git commit -m "Initial portfolio commit"
+
+STEP 3: Go to GitHub
+------
+Visit: https://github.com/new
+Create repository:
+  - Name: portfolio
+  - Public
+  - DO NOT add README or .gitignore
+  - Click "Create repository"
+
+STEP 4: Push to GitHub
+------
+Copy the URL from GitHub (looks like https://github.com/YOUR_USERNAME/portfolio.git)
+Then run in Command Prompt:
+
+git remote add origin https://github.com/YOUR_USERNAME/portfolio.git
+git branch -M main
+git push -u origin main
+
+STEP 5: Deploy on Render
+------
+Go to: https://render.com
+1. Click "New +"
+2. Select "Web Service"
+3. Connect GitHub account
+4. Select repository: portfolio
+5. Fill in:
+   - Name: portfolio (or any name)
+   - Runtime: Node
+   - Build command: npm install
+   - Start command: npm start
+6. Click "Create Web Service"
+
+DONE! Your site will be live in 2-3 minutes!
+
+========================================
+WHAT NEXT?
+========================================
+
+After deployment, you'll get a URL like:
+  https://portfolio-xxxxx.onrender.com
+
+Test:
+✓ Load homepage
+✓ View gallery and click projects
+✓ Test admin dashboard at /admin.html
+✓ Contact form submission
+
+Share your public URL with clients!
+
+========================================
