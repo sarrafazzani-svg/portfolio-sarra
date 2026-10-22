@@ -1,642 +1,1244 @@
 const express = require('express');
+
 const cors = require('cors');
+
 const multer = require('multer');
+
 const path = require('path');
+
 const fs = require('fs');
+
 const jwt = require('jsonwebtoken');
+
 const bcrypt = require('bcryptjs');
+
 const nodemailer = require('nodemailer');
-const sqlite3 = require('sqlite3').verbose();
+
 require('dotenv').config();
 
+
+
 const app = express();
+
 const PORT = process.env.PORT || 3001;
+
 const SECRET_KEY = process.env.SECRET_KEY || 'your-secret-key-change-in-production';
 
-// ============================================
-// DATABASE INITIALIZATION
-// ============================================
-const dbPath = path.join(__dirname, 'portfolio.db');
-const db = new sqlite3.Database(dbPath, (err) => {
-    if (err) {
-        console.error('Database error:', err);
-    } else {
-        console.log('✅ Connected to database:', dbPath);
-        initializeDatabase();
-    }
-});
 
-function initializeDatabase() {
-    db.serialize(() => {
-        // Create profile table
-        db.run(`
-            CREATE TABLE IF NOT EXISTS profile (
-                id INTEGER PRIMARY KEY CHECK (id = 1),
-                name TEXT NOT NULL DEFAULT 'Your Name',
-                position TEXT NOT NULL DEFAULT 'Multimedia Artist',
-                bio TEXT NOT NULL DEFAULT 'Creative multimedia artist dedicated to creating innovative visual experiences.',
-                email TEXT NOT NULL DEFAULT 'your@email.com'
-            )
-        `);
-
-        // Create contact_settings table
-        db.run(`
-            CREATE TABLE IF NOT EXISTS contact_settings (
-                id INTEGER PRIMARY KEY CHECK (id = 1),
-                email TEXT NOT NULL DEFAULT 'your@email.com',
-                location TEXT DEFAULT '',
-                social_links TEXT DEFAULT '[]'
-            )
-        `);
-
-        // Create projects table
-        db.run(`
-            CREATE TABLE IF NOT EXISTS projects (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                title TEXT NOT NULL,
-                category TEXT NOT NULL,
-                image TEXT,
-                images TEXT DEFAULT '[]',
-                video TEXT,
-                overview TEXT DEFAULT '',
-                challenge TEXT DEFAULT '',
-                solution TEXT DEFAULT '',
-                tools TEXT DEFAULT '[]',
-                link TEXT DEFAULT '',
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        `);
-
-        // Create contact_messages table
-        db.run(`
-            CREATE TABLE IF NOT EXISTS contact_messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                email TEXT NOT NULL,
-                message TEXT NOT NULL,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        `);
-
-        // Create admin_credentials table
-        db.run(`
-            CREATE TABLE IF NOT EXISTS admin_credentials (
-                id INTEGER PRIMARY KEY CHECK (id = 1),
-                username TEXT NOT NULL DEFAULT 'admin',
-                password_hash TEXT NOT NULL
-            )
-        `);
-
-        // Initialize default profile
-        db.run(`INSERT OR IGNORE INTO profile (id, name, position, bio, email) 
-                VALUES (1, 'Your Name', 'Multimedia Artist', 'Creative multimedia artist dedicated to creating innovative visual experiences.', 'your@email.com')`);
-
-        // Initialize default contact settings
-        db.run(`INSERT OR IGNORE INTO contact_settings (id, email, location, social_links)
-                VALUES (1, 'your@email.com', '', '[]')`);
-
-        // Initialize default admin credentials
-        const defaultHash = bcrypt.hashSync('admin123', 10);
-        db.run(`INSERT OR IGNORE INTO admin_credentials (id, username, password_hash)
-                VALUES (1, 'admin', ?)`, [defaultHash]);
-
-        console.log('✅ Database tables initialized');
-    });
-}
-
-// Helper to run database queries with callbacks
-function dbRun(sql, params = []) {
-    return new Promise((resolve, reject) => {
-        db.run(sql, params, function(err) {
-            if (err) reject(err);
-            else resolve(this);
-        });
-    });
-}
-
-function dbGet(sql, params = []) {
-    return new Promise((resolve, reject) => {
-        db.get(sql, params, (err, row) => {
-            if (err) reject(err);
-            else resolve(row);
-        });
-    });
-}
-
-function dbAll(sql, params = []) {
-    return new Promise((resolve, reject) => {
-        db.all(sql, params, (err, rows) => {
-            if (err) reject(err);
-            else resolve(rows);
-        });
-    });
-}
 
 // ============================================
+
 // EMAIL CONFIGURATION
+
 // ============================================
+
+// Configure Gmail SMTP
+
 const transporter = nodemailer.createTransport({
+
     service: 'gmail',
+
     auth: {
+
         user: process.env.GMAIL_USER || 'your-gmail@gmail.com',
+
         pass: process.env.GMAIL_PASSWORD || 'your-app-password'
+
     }
+
 });
+
+
+
+// Test email connection
 
 transporter.verify((error, success) => {
+
     if (error) {
+
         console.log('⚠️ Email configuration issue:', error.message);
+
     } else {
+
         console.log('✅ Email service ready');
+
     }
+
 });
 
-// ============================================
-// MIDDLEWARE
-// ============================================
+
+
+// Middleware
+
 app.use(cors());
+
 app.use(express.json({ limit: '50mb' }));
+
+
+
+// Performance optimization: Add compression and caching headers
 
 const compression = require('compression');
 app.use(compression());
 
-app.use(express.static('.', {
-    maxAge: '1h',
-    etag: false
+// Do not let browsers keep old admin/public scripts after a deployment.
+app.use(express.static(__dirname, {
+    etag: true,
+    setHeaders(res, filePath) {
+        if (/\.(html|js|css)$/i.test(filePath)) {
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        } else if (/\.(jpg|jpeg|png|gif|webp|svg|mp4|webm)$/i.test(filePath)) {
+            res.setHeader('Cache-Control', 'public, max-age=86400');
+        }
+    }
 }));
 
-app.use((req, res, next) => {
-    if (req.url.endsWith('.js') || req.url.endsWith('.css')) {
-        res.set('Cache-Control', 'public, max-age=3600');
-    } else if (req.url.endsWith('.html')) {
-        res.set('Cache-Control', 'public, max-age=300');
-    } else if (req.url.match(/\.(jpg|jpeg|png|gif|webp|svg)$/)) {
-        res.set('Cache-Control', 'public, max-age=86400');
+// Storage setup
+
+const storage = multer.diskStorage({
+
+    destination: (req, file, cb) => {
+
+        const dir = path.join(__dirname, 'uploads');
+
+        if (!fs.existsSync(dir)) {
+
+            fs.mkdirSync(dir, { recursive: true });
+
+        }
+
+        cb(null, dir);
+
+    },
+
+    filename: (req, file, cb) => {
+
+        cb(null, Date.now() + path.extname(file.originalname));
+
     }
-    next();
+
 });
 
-// ============================================
-// FILE UPLOAD CONFIGURATION
-// ============================================
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        const dir = path.join(__dirname, 'uploads');
-        if (!fs.existsSync(dir)) {
-            fs.mkdirSync(dir, { recursive: true });
-        }
-        cb(null, dir);
-    },
-    filename: (req, file, cb) => {
-        cb(null, Date.now() + path.extname(file.originalname));
-    }
-});
+
 
 const upload = multer({ 
+
     storage,
-    limits: { fileSize: 500 * 1024 * 1024 },
+
+    limits: { fileSize: 500 * 1024 * 1024 }, // 500MB limit for videos
+
     fileFilter: (req, file, cb) => {
+
+        // Allow images and videos
+
         const allowedMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4', 'video/webm', 'video/quicktime'];
+
         if (allowedMimes.includes(file.mimetype)) {
+
             cb(null, true);
+
         } else {
+
             cb(new Error(`Invalid file type: ${file.mimetype}`));
+
         }
+
     }
+
 });
 
-// ============================================
-// AUTHENTICATION
-// ============================================
-app.post('/api/admin/login', async (req, res) => {
+
+
+// Admin credentials file
+
+const credentialsFile = path.join(__dirname, '.admin-credentials.json');
+
+
+
+// Contact settings file
+
+const contactSettingsFile = path.join(__dirname, '.contact-settings.json');
+
+
+
+// Profile data file
+
+const profileFile = path.join(__dirname, '.profile.json');
+
+
+
+function loadProfile() {
+
     try {
-        const { username, password } = req.body;
-        
-        const admin = await dbGet('SELECT * FROM admin_credentials WHERE id = 1');
-        
-        if (!admin || username !== admin.username || !bcrypt.compareSync(password, admin.password_hash)) {
-            return res.status(401).json({ success: false, message: 'Invalid credentials' });
-        }
-        
-        const token = jwt.sign({ username }, SECRET_KEY, { expiresIn: '24h' });
-        res.json({ success: true, token });
-    } catch (error) {
-        console.error('Login error:', error);
-        res.status(500).json({ success: false, message: 'Login failed' });
-    }
-});
 
-// ============================================
-// TOKEN VERIFICATION MIDDLEWARE
-// ============================================
-function verifyToken(req, res, next) {
-    const token = req.headers['authorization']?.split(' ')[1];
-    
-    if (!token) {
-        if (req.hostname === 'localhost' || req.hostname === '127.0.0.1') {
-            req.user = { username: 'admin' };
-            return next();
+        if (fs.existsSync(profileFile)) {
+
+            return JSON.parse(fs.readFileSync(profileFile, 'utf8'));
+
         }
-        return res.status(401).json({ message: 'No token provided' });
+
+    } catch (e) {
+
+        console.log('Could not load profile');
+
     }
-    
-    if (token.startsWith('admin-session-')) {
-        req.user = { username: 'admin' };
-        return next();
-    }
-    
-    jwt.verify(token, SECRET_KEY, (err, decoded) => {
-        if (err) {
-            return res.status(401).json({ message: 'Invalid token' });
-        }
-        req.user = decoded;
-        next();
-    });
+
+
+
+    // Default profile
+
+    return {
+
+        name: 'Your Name',
+
+        position: 'Multimedia Artist',
+
+        bio: 'Creative multimedia artist dedicated to creating innovative visual experiences.',
+
+        email: 'your@email.com'
+
+    };
+
 }
 
+
+
+function saveProfile(profile) {
+
+    try {
+
+        fs.writeFileSync(profileFile, JSON.stringify(profile, null, 2), { mode: 0o600 });
+
+        console.log('✅ Profile saved');
+
+    } catch (e) {
+
+        console.error('Could not save profile:', e);
+
+    }
+
+}
+
+
+
+function loadContactSettings() {
+
+    try {
+
+        if (fs.existsSync(contactSettingsFile)) {
+
+            return JSON.parse(fs.readFileSync(contactSettingsFile, 'utf8'));
+
+        }
+
+    } catch (e) {
+
+        console.log('Could not load contact settings');
+
+    }
+
+
+
+    // Default contact settings
+
+    return {
+
+        email: 'your@email.com',
+
+        location: '',
+
+        socialLinks: []
+
+    };
+
+}
+
+
+
+function saveContactSettings(settings) {
+
+    try {
+
+        fs.writeFileSync(contactSettingsFile, JSON.stringify(settings, null, 2), { mode: 0o600 });
+
+        console.log('✅ Contact settings saved');
+
+    } catch (e) {
+
+        console.error('Could not save contact settings:', e);
+
+    }
+
+}
+
+
+
+function loadAdminCredentials() {
+
+    try {
+
+        if (fs.existsSync(credentialsFile)) {
+
+            return JSON.parse(fs.readFileSync(credentialsFile, 'utf8'));
+
+        }
+
+    } catch (e) {
+
+        console.log('Could not load admin credentials');
+
+    }
+
+
+
+    // Default credentials on first run - MUST BE CHANGED
+
+    const defaultCredentials = {
+
+        username: 'admin',
+
+        passwordHash: bcrypt.hashSync('admin123', 10)
+
+    };
+
+
+
+    saveAdminCredentials(defaultCredentials);
+
+    console.log('⚠️  Default admin credentials created. PLEASE CHANGE THE PASSWORD IMMEDIATELY!');
+
+    return defaultCredentials;
+
+}
+
+
+
+function saveAdminCredentials(credentials) {
+
+    try {
+
+        // Ensure file has restrictive permissions
+
+        fs.writeFileSync(credentialsFile, JSON.stringify(credentials, null, 2), { mode: 0o600 });
+
+    } catch (e) {
+
+        console.error('Could not save admin credentials:', e);
+
+    }
+
+}
+
+
+
+let adminCredentials = loadAdminCredentials();
+
+
+
+// Projects data file
+
+const projectsFile = path.join(__dirname, 'projects.json');
+
+
+
+function loadProjects() {
+
+    try {
+
+        if (fs.existsSync(projectsFile)) {
+
+            return JSON.parse(fs.readFileSync(projectsFile, 'utf8'));
+
+        }
+
+    } catch (e) {
+
+        console.log('Could not load projects');
+
+    }
+
+    return [];
+
+}
+
+
+
+function saveProjects(projects) {
+
+    try {
+
+        fs.writeFileSync(projectsFile, JSON.stringify(projects, null, 2));
+
+        console.log('Projects saved to projects.json');
+
+    } catch (e) {
+
+        console.error('Could not save projects to file:', e);
+
+    }
+
+}
+
+
+
+// Auth Routes
+
+app.post('/api/admin/login', (req, res) => {
+
+    const { username, password } = req.body;
+
+
+
+    if (username === adminCredentials.username && bcrypt.compareSync(password, adminCredentials.passwordHash)) {
+
+        const token = jwt.sign({ username }, SECRET_KEY, { expiresIn: '24h' });
+
+        res.json({ success: true, token });
+
+    } else {
+
+        res.status(401).json({ success: false, message: 'Invalid credentials' });
+
+    }
+
+});
+
+
+
+// Middleware to verify token
+
+function verifyToken(req, res, next) {
+
+    const token = req.headers['authorization']?.split(' ')[1];
+
+
+
+    // For now, accept both JWT tokens and simple session tokens
+
+    if (!token) {
+
+        // If no token, allow if it's from localhost (development)
+
+        if (req.hostname === 'localhost' || req.hostname === '127.0.0.1') {
+
+            req.user = { username: 'admin' };
+
+            return next();
+
+        }
+
+        return res.status(401).json({ message: 'No token provided' });
+
+    }
+
+
+
+    // Check if it's a simple session token (from our localStorage)
+
+    if (token.startsWith('admin-session-')) {
+
+        req.user = { username: 'admin' };
+
+        return next();
+
+    }
+
+
+
+    // Otherwise try to verify as JWT
+
+    jwt.verify(token, SECRET_KEY, (err, decoded) => {
+
+        if (err) {
+
+            return res.status(401).json({ message: 'Invalid token' });
+
+        }
+
+        req.user = decoded;
+
+        next();
+
+    });
+
+}
+
+
+
 // ============================================
+
 // PROFILE ENDPOINTS
+
 // ============================================
-app.get('/api/profile', async (req, res) => {
+
+app.get('/api/profile', (req, res) => {
+
     try {
-        const profile = await dbGet('SELECT * FROM profile WHERE id = 1');
-        res.json(profile || {});
+
+        const profile = loadProfile();
+
+        res.json(profile);
+
     } catch (error) {
+
         console.error('Error loading profile:', error);
+
         res.status(500).json({ error: error.message });
+
     }
+
 });
 
-app.post('/api/admin/profile', verifyToken, async (req, res) => {
+
+
+app.post('/api/admin/profile', verifyToken, (req, res) => {
+
     try {
+
         const { name, position, bio, email } = req.body;
-        
+
+
+
         if (!name || !email) {
+
             return res.status(400).json({ success: false, message: 'Name and email are required' });
+
         }
-        
-        await dbRun(
-            `INSERT OR REPLACE INTO profile (id, name, position, bio, email) VALUES (1, ?, ?, ?, ?)`,
-            [name.trim(), position?.trim() || '', bio?.trim() || '', email.trim()]
-        );
-        
-        const profile = await dbGet('SELECT * FROM profile WHERE id = 1');
-        console.log('✅ Profile updated');
+
+
+
+        const profile = {
+
+            name: name.trim(),
+
+            position: (position || '').trim(),
+
+            bio: (bio || '').trim(),
+
+            email: email.trim()
+
+        };
+
+
+
+        saveProfile(profile);
+
         res.json({ success: true, profile });
+
     } catch (error) {
+
         console.error('Error saving profile:', error);
+
         res.status(500).json({ success: false, error: error.message });
+
     }
+
 });
 
+
+
 // ============================================
+
 // CONTACT SETTINGS ENDPOINTS
-// ============================================
-app.get('/api/contact-settings', async (req, res) => {
-    try {
-        const settings = await dbGet('SELECT * FROM contact_settings WHERE id = 1');
-        
-        res.json({
-            email: settings?.email || 'your@email.com',
-            location: settings?.location || '',
-            socialLinks: settings ? JSON.parse(settings.social_links) : []
-        });
-    } catch (error) {
-        console.error('Error:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
 
-app.get('/api/admin/contact-settings', verifyToken, async (req, res) => {
+// ============================================
+
+app.get('/api/admin/contact-settings', verifyToken, (req, res) => {
+
     try {
-        const settings = await dbGet('SELECT * FROM contact_settings WHERE id = 1');
-        
-        res.json({
-            success: true,
-            settings: {
-                email: settings?.email || 'your@email.com',
-                location: settings?.location || '',
-                socialLinks: settings ? JSON.parse(settings.social_links) : []
-            }
-        });
+
+        const settings = loadContactSettings();
+
+        res.json({ success: true, settings });
+
     } catch (error) {
+
         console.error('Error loading contact settings:', error);
+
         res.status(500).json({ success: false, error: error.message });
+
     }
+
 });
 
-app.post('/api/admin/contact-settings', verifyToken, async (req, res) => {
+
+
+app.post('/api/admin/contact-settings', verifyToken, (req, res) => {
+
     try {
+
         const { email, location, socialLinks } = req.body;
-        
+
+
+
         if (!email) {
+
             return res.status(400).json({ success: false, message: 'Email is required' });
+
         }
-        
-        const socialLinksJson = JSON.stringify(
-            Array.isArray(socialLinks) ? 
-            socialLinks.filter(link => link.platform && link.url) : 
-            []
-        );
-        
-        await dbRun(
-            `INSERT OR REPLACE INTO contact_settings (id, email, location, social_links) VALUES (1, ?, ?, ?)`,
-            [email.trim(), location?.trim() || '', socialLinksJson]
-        );
-        
-        console.log('✅ Contact settings updated');
-        res.json({ 
-            success: true, 
-            settings: {
-                email: email.trim(),
-                location: location?.trim() || '',
-                socialLinks: JSON.parse(socialLinksJson)
-            }
-        });
+
+
+
+        const settings = {
+
+            email: email.trim(),
+
+            location: location?.trim() || '',
+
+            socialLinks: Array.isArray(socialLinks) ? socialLinks.filter(link => 
+
+                link.platform && link.platform.trim() && link.url && link.url.trim()
+
+            ) : []
+
+        };
+
+
+
+        saveContactSettings(settings);
+
+        res.json({ success: true, settings });
+
     } catch (error) {
+
         console.error('Error saving contact settings:', error);
+
         res.status(500).json({ success: false, error: error.message });
+
     }
+
 });
 
-// ============================================
-// SECURITY ENDPOINTS
-// ============================================
-app.post('/api/admin/security/change-username', verifyToken, async (req, res) => {
-    try {
-        const { currentPassword, newUsername } = req.body;
-        
-        if (!currentPassword || !newUsername) {
-            return res.status(400).json({ message: 'Current password and new username are required' });
-        }
-        
-        if (newUsername.length < 3) {
-            return res.status(400).json({ message: 'Username must be at least 3 characters long' });
-        }
-        
-        const admin = await dbGet('SELECT * FROM admin_credentials WHERE id = 1');
-        
-        if (!bcrypt.compareSync(currentPassword, admin.password_hash)) {
-            return res.status(401).json({ message: 'Current password is incorrect' });
-        }
-        
-        await dbRun('UPDATE admin_credentials SET username = ? WHERE id = 1', [newUsername]);
-        
-        console.log('✅ Admin username changed');
-        res.json({ success: true, message: 'Username updated successfully' });
-    } catch (error) {
-        console.error('Error changing username:', error);
-        res.status(500).json({ message: 'Error updating username' });
-    }
-});
 
-app.post('/api/admin/security/change-password', verifyToken, async (req, res) => {
-    try {
-        const { currentPassword, newPassword } = req.body;
-        
-        if (!currentPassword || !newPassword) {
-            return res.status(400).json({ message: 'Current and new passwords are required' });
-        }
-        
-        if (newPassword.length < 6) {
-            return res.status(400).json({ message: 'Password must be at least 6 characters long' });
-        }
-        
-        const admin = await dbGet('SELECT * FROM admin_credentials WHERE id = 1');
-        
-        if (!bcrypt.compareSync(currentPassword, admin.password_hash)) {
-            return res.status(401).json({ message: 'Current password is incorrect' });
-        }
-        
-        const newHash = bcrypt.hashSync(newPassword, 10);
-        await dbRun('UPDATE admin_credentials SET password_hash = ? WHERE id = 1', [newHash]);
-        
-        console.log('✅ Admin password changed');
-        res.json({ success: true, message: 'Password updated successfully' });
-    } catch (error) {
-        console.error('Error changing password:', error);
-        res.status(500).json({ message: 'Error updating password' });
-    }
-});
 
 // ============================================
-// PROJECTS ENDPOINTS
+
+// GET CONTACT SETTINGS (PUBLIC)
+
 // ============================================
-app.get('/api/projects', async (req, res) => {
+
+app.get('/api/contact-settings', (req, res) => {
+
     try {
-        const projects = await dbAll('SELECT * FROM projects ORDER BY created_at DESC');
-        const result = projects.map(p => ({
-            ...p,
-            images: JSON.parse(p.images),
-            tools: JSON.parse(p.tools)
-        }));
-        res.json(result);
+
+        const settings = loadContactSettings();
+
+        res.json(settings);
+
     } catch (error) {
-        console.error('Error loading projects:', error);
+
+        console.error('Error:', error);
+
         res.status(500).json({ error: error.message });
+
     }
+
 });
+
+
+
+// ============================================
+
+
+
+app.post('/api/admin/security/change-username', verifyToken, (req, res) => {
+
+    try {
+
+        const { currentPassword, newUsername } = req.body;
+
+
+
+        if (!currentPassword || !newUsername) {
+
+            return res.status(400).json({ message: 'Current password and new username are required' });
+
+        }
+
+
+
+        if (newUsername.length < 3) {
+
+            return res.status(400).json({ message: 'Username must be at least 3 characters long' });
+
+        }
+
+
+
+        // Verify current password
+
+        if (!bcrypt.compareSync(currentPassword, adminCredentials.passwordHash)) {
+
+            return res.status(401).json({ message: 'Current password is incorrect' });
+
+        }
+
+
+
+        // Update username
+
+        adminCredentials.username = newUsername;
+
+        saveAdminCredentials(adminCredentials);
+
+
+
+        console.log('✅ Admin username changed');
+
+        res.json({ success: true, message: 'Username updated successfully' });
+
+    } catch (error) {
+
+        console.error('Error changing username:', error);
+
+        res.status(500).json({ message: 'Error updating username' });
+
+    }
+
+});
+
+
+
+app.post('/api/admin/security/change-password', verifyToken, (req, res) => {
+
+    try {
+
+        const { currentPassword, newPassword } = req.body;
+
+
+
+        if (!currentPassword || !newPassword) {
+
+            return res.status(400).json({ message: 'Current and new passwords are required' });
+
+        }
+
+
+
+        if (newPassword.length < 6) {
+
+            return res.status(400).json({ message: 'Password must be at least 6 characters long' });
+
+        }
+
+
+
+        // Verify current password
+
+        if (!bcrypt.compareSync(currentPassword, adminCredentials.passwordHash)) {
+
+            return res.status(401).json({ message: 'Current password is incorrect' });
+
+        }
+
+
+
+        // Update password with bcrypt hashing
+
+        adminCredentials.passwordHash = bcrypt.hashSync(newPassword, 10);
+
+        saveAdminCredentials(adminCredentials);
+
+
+
+        console.log('✅ Admin password changed');
+
+        res.json({ success: true, message: 'Password updated successfully' });
+
+    } catch (error) {
+
+        console.error('Error changing password:', error);
+
+        res.status(500).json({ message: 'Error updating password' });
+
+    }
+
+});
+
+
+
+// Project Routes
+
+app.get('/api/projects', (req, res) => {
+
+    res.json(loadProjects());
+
+});
+
+
+
+// Sync localStorage from client to server (save data persistently)
+
+app.post('/api/projects/sync', (req, res) => {
+
+    try {
+
+        const projects = req.body;
+
+        if (!Array.isArray(projects)) {
+
+            return res.status(400).json({ success: false, message: 'Invalid projects data' });
+
+        }
+
+        saveProjects(projects);
+
+        res.json({ success: true, message: 'Projects synced successfully' });
+
+    } catch (error) {
+
+        res.status(500).json({ success: false, error: error.message });
+
+    }
+
+});
+
+
 
 app.post('/api/admin/projects', verifyToken, upload.fields([
+
     { name: 'thumbnail', maxCount: 1 },
+
     { name: 'images', maxCount: 10 },
+
     { name: 'video', maxCount: 1 }
-]), async (req, res) => {
+
+]), (req, res) => {
+
     try {
-        const { title, category, overview, challenge, solution, tools, link } = req.body;
-        
-        if (!title || !category) {
-            return res.status(400).json({ success: false, message: 'Title and category are required' });
-        }
-        
-        const thumbnail = req.files?.thumbnail?.[0];
-        const images = req.files?.images || [];
-        const video = req.files?.video?.[0];
-        
-        if (!thumbnail || images.length === 0) {
-            return res.status(400).json({ success: false, message: 'Thumbnail and at least one image are required' });
-        }
-        
-        const toolsArray = typeof tools === 'string' ? JSON.parse(tools) : [];
-        const imageUrls = images.map(f => `/uploads/${f.filename}`);
-        const thumbnailUrl = `/uploads/${thumbnail.filename}`;
-        const videoUrl = video ? `/uploads/${video.filename}` : '';
-        
-        const result = await dbRun(
-            `INSERT INTO projects (title, category, image, images, video, overview, challenge, solution, tools, link)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-                title.trim(),
-                category.trim(),
-                thumbnailUrl,
-                JSON.stringify(imageUrls),
-                videoUrl,
-                overview?.trim() || '',
-                challenge?.trim() || '',
-                solution?.trim() || '',
-                JSON.stringify(toolsArray),
-                link?.trim() || ''
-            ]
-        );
-        
-        const project = await dbGet('SELECT * FROM projects WHERE id = ?', [result.lastID]);
-        project.images = JSON.parse(project.images);
-        project.tools = JSON.parse(project.tools);
-        
-        console.log('✅ Project created');
+
+        const projects = loadProjects();
+
+        const newId = Math.max(...projects.map(p => p.id), 0) + 1;
+
+
+
+        const project = {
+
+            id: newId,
+
+            title: req.body.title,
+
+            category: req.body.category,
+
+            image: req.files.thumbnail ? `/uploads/${req.files.thumbnail[0].filename}` : '',
+
+            images: req.files.images ? req.files.images.map(f => `/uploads/${f.filename}`) : [],
+
+            video: req.files.video ? `/uploads/${req.files.video[0].filename}` : '',
+
+            overview: req.body.overview,
+
+            challenge: req.body.challenge,
+
+            solution: req.body.solution,
+
+            tools: JSON.parse(req.body.tools || '[]'),
+
+            link: req.body.link || ''
+
+        };
+
+
+
+        projects.push(project);
+
+        saveProjects(projects);
+
         res.json({ success: true, project });
-    } catch (error) {
-        console.error('Error creating project:', error);
-        res.status(500).json({ success: false, error: error.message });
+
+    } catch (e) {
+
+        res.status(500).json({ success: false, error: e.message });
+
     }
+
 });
+
+
 
 app.put('/api/admin/projects/:id', verifyToken, upload.fields([
+
     { name: 'thumbnail', maxCount: 1 },
+
     { name: 'images', maxCount: 10 },
+
     { name: 'video', maxCount: 1 }
-]), async (req, res) => {
+
+]), (req, res) => {
+
     try {
-        const projectId = parseInt(req.params.id);
-        const { title, category, overview, challenge, solution, tools, link } = req.body;
-        
-        const existing = await dbGet('SELECT * FROM projects WHERE id = ?', [projectId]);
-        
-        if (!existing) {
+
+        const projects = loadProjects();
+
+        const project = projects.find(p => p.id === parseInt(req.params.id));
+
+
+
+        if (!project) {
+
             return res.status(404).json({ success: false, message: 'Project not found' });
+
         }
-        
-        const images = req.files?.images || [];
-        const thumbnail = req.files?.thumbnail?.[0];
-        const video = req.files?.video?.[0];
-        
-        const thumbnailUrl = thumbnail ? `/uploads/${thumbnail.filename}` : existing.image;
-        const imageUrls = images.length > 0 ? 
-            images.map(f => `/uploads/${f.filename}`) : 
-            JSON.parse(existing.images);
-        const videoUrl = video ? `/uploads/${video.filename}` : existing.video;
-        const toolsArray = typeof tools === 'string' ? JSON.parse(tools) : JSON.parse(existing.tools);
-        
-        await dbRun(
-            `UPDATE projects 
-             SET title = ?, category = ?, image = ?, images = ?, video = ?, overview = ?, challenge = ?, solution = ?, tools = ?, link = ?
-             WHERE id = ?`,
-            [
-                title?.trim() || existing.title,
-                category?.trim() || existing.category,
-                thumbnailUrl,
-                JSON.stringify(imageUrls),
-                videoUrl,
-                overview?.trim() || existing.overview,
-                challenge?.trim() || existing.challenge,
-                solution?.trim() || existing.solution,
-                JSON.stringify(toolsArray),
-                link?.trim() || existing.link,
-                projectId
-            ]
-        );
-        
-        const updated = await dbGet('SELECT * FROM projects WHERE id = ?', [projectId]);
-        updated.images = JSON.parse(updated.images);
-        updated.tools = JSON.parse(updated.tools);
-        
-        console.log('✅ Project updated');
-        res.json({ success: true, project: updated });
-    } catch (error) {
-        console.error('Error updating project:', error);
-        res.status(500).json({ success: false, error: error.message });
+
+
+
+        project.title = req.body.title;
+
+        project.category = req.body.category;
+
+        project.overview = req.body.overview;
+
+        project.challenge = req.body.challenge;
+
+        project.solution = req.body.solution;
+
+        project.tools = JSON.parse(req.body.tools || '[]');
+
+        project.link = req.body.link || '';
+
+
+
+        if (req.files.thumbnail) {
+
+            project.image = `/uploads/${req.files.thumbnail[0].filename}`;
+
+        }
+
+
+
+        if (req.files.images) {
+
+            project.images = req.files.images.map(f => `/uploads/${f.filename}`);
+
+        }
+
+
+
+        if (req.files.video) {
+
+            project.video = `/uploads/${req.files.video[0].filename}`;
+
+        }
+
+
+
+        saveProjects(projects);
+
+        res.json({ success: true, project });
+
+    } catch (e) {
+
+        res.status(500).json({ success: false, error: e.message });
+
     }
+
 });
 
-app.delete('/api/admin/projects/:id', verifyToken, async (req, res) => {
+
+
+app.delete('/api/admin/projects/:id', verifyToken, (req, res) => {
+
     try {
-        const projectId = parseInt(req.params.id);
-        await dbRun('DELETE FROM projects WHERE id = ?', [projectId]);
-        
-        console.log('✅ Project deleted');
+
+        const projects = loadProjects();
+
+        const filtered = projects.filter(p => p.id !== parseInt(req.params.id));
+
+        saveProjects(filtered);
+
         res.json({ success: true });
-    } catch (error) {
-        console.error('Error deleting project:', error);
-        res.status(500).json({ success: false, error: error.message });
+
+    } catch (e) {
+
+        res.status(500).json({ success: false, error: e.message });
+
     }
+
 });
+
+
 
 // ============================================
-// CONTACT MESSAGES ENDPOINTS
+
+// CONTACT MESSAGES - GET ALL MESSAGES (ADMIN)
+
 // ============================================
-app.post('/api/contact', async (req, res) => {
-    try {
-        const { name, email, message } = req.body;
-        
-        if (!name || !email || !message) {
-            return res.status(400).json({ success: false, message: 'All fields are required' });
-        }
-        
-        await dbRun(
-            'INSERT INTO contact_messages (name, email, message) VALUES (?, ?, ?)',
-            [name.trim(), email.trim(), message.trim()]
-        );
-        
-        console.log('✅ Contact message saved');
-        res.json({ success: true, message: 'Message received! Thank you for contacting me.' });
-    } catch (error) {
-        console.error('Contact error:', error);
-        res.status(500).json({ success: false, message: 'An error occurred. Please try again.' });
-    }
-});
 
-app.get('/api/admin/messages', verifyToken, async (req, res) => {
+app.get('/api/admin/messages', verifyToken, (req, res) => {
+
     try {
-        const messages = await dbAll('SELECT * FROM contact_messages ORDER BY created_at DESC');
-        const result = messages.map((msg, index) => ({
-            id: index,
-            name: msg.name,
-            email: msg.email,
-            message: msg.message,
-            date: new Date(msg.created_at).toLocaleString()
-        }));
-        
-        res.json({ success: true, messages: result });
+
+        const contactsFile = path.join(__dirname, 'contacts.txt');
+
+
+
+        if (!fs.existsSync(contactsFile)) {
+
+            return res.json({ success: true, messages: [] });
+
+        }
+
+
+
+        const content = fs.readFileSync(contactsFile, 'utf8');
+
+
+
+        // Parse messages from the text file
+
+        const messages = [];
+
+        const blocks = content.split('================================================================================');
+
+
+
+        blocks.forEach((block, index) => {
+
+            if (!block.trim()) return;
+
+
+
+            const lines = block.trim().split('\n').filter(l => l.trim());
+
+            let message = {};
+
+
+
+            lines.forEach(line => {
+
+                if (line.startsWith('DATE:')) {
+
+                    message.date = line.replace('DATE:', '').trim();
+
+                } else if (line.startsWith('NAME:')) {
+
+                    message.name = line.replace('NAME:', '').trim();
+
+                } else if (line.startsWith('EMAIL:')) {
+
+                    message.email = line.replace('EMAIL:', '').trim();
+
+                } else if (line.startsWith('MESSAGE:')) {
+
+                    // MESSAGE: is the header, content comes after
+
+                    const messageStart = block.indexOf('MESSAGE:') + 'MESSAGE:'.length;
+
+                    message.message = block.substring(messageStart).trim();
+
+                }
+
+            });
+
+
+
+            if (message.name && message.email) {
+
+                message.id = index;
+
+                messages.push(message);
+
+            }
+
+        });
+
+
+
+        res.json({ success: true, messages: messages.reverse() }); // Show newest first
+
     } catch (error) {
-        console.error('Error loading messages:', error);
+
+        console.error('Error reading messages:', error);
+
         res.status(500).json({ success: false, error: error.message });
+
     }
+
 });
 
-app.delete('/api/admin/messages/:id', verifyToken, async (req, res) => {
+
+
+// ============================================
+
+// CONTACT MESSAGES - DELETE MESSAGE (ADMIN)
+
+// ============================================
+
+app.delete('/api/admin/messages/:id', verifyToken, (req, res) => {
+
     try {
-        const messageId = parseInt(req.params.id);
-        const messages = await dbAll('SELECT rowid FROM contact_messages ORDER BY created_at DESC');
-        
-        if (messageId < messages.length) {
-            const rowid = messages[messageId].rowid;
-            await dbRun('DELETE FROM contact_messages WHERE rowid = ?', [rowid]);
-            console.log('✅ Message deleted');
+
+        const contactsFile = path.join(__dirname, 'contacts.txt');
+
+
+
+        if (!fs.existsSync(contactsFile)) {
+
+            return res.json({ success: true });
+
         }
-        
+
+
+
+        const content = fs.readFileSync(contactsFile, 'utf8');
+
+        const messages = [];
+
+        const blocks = content.split('================================================================================');
+
+
+
+        let messageIndex = 0;
+
+        const filteredBlocks = blocks.filter((block, index) => {
+
+            if (!block.trim()) return true; // Keep empty blocks
+
+
+
+            const lines = block.trim().split('\n').filter(l => l.trim());
+
+            let hasData = lines.some(l => l.startsWith('NAME:') || l.startsWith('EMAIL:'));
+
+
+
+            if (hasData) {
+
+                if (messageIndex === parseInt(req.params.id)) {
+
+                    messageIndex++;
+
+                    return false; // Remove this block
+
+                }
+
+                messageIndex++;
+
+            }
+
+            return true;
+
+        });
+
+
+
+        fs.writeFileSync(contactsFile, filteredBlocks.join('================================================================================'));
+
         res.json({ success: true });
+
     } catch (error) {
+
         console.error('Error deleting message:', error);
+
         res.status(500).json({ success: false, error: error.message });
+
     }
+
 });
 
+
+
 // ============================================
-// SERVER START
+
+// CONTACT FORM - SAVE TO FILE (SIMPLE & RELIABLE)
+
 // ============================================
+
+app.post('/api/contact', async (req, res) => {
+
+    try {
+
+        const { name, email, message } = req.body;
+
+
+
+        if (!name || !email || !message) {
+
+            return res.status(400).json({ 
+
+                success: false, 
+
+                message: 'All fields are required' 
+
+            });
+
+        }
+
+
+
+        // Create contact message with timestamp
+
+        const timestamp = new Date().toLocaleString();
+
+        const contactMessage = `
+
+\================================================================================
+
+DATE: ${timestamp}
+
+NAME: ${name}
+
+EMAIL: ${email}
+
+MESSAGE:
+
+${message}
+
+\================================================================================
+
+
+
+`;
+
+
+
+        // Save to contacts.txt file
+
+        const contactsFile = path.join(__dirname, 'contacts.txt');
+
+        fs.appendFileSync(contactsFile, contactMessage);
+
+
+
+        console.log('✅ Contact message saved from:', name);
+
+        res.json({ 
+
+            success: true, 
+
+            message: 'Message received! Thank you for contacting me.' 
+
+        });
+
+
+
+    } catch (error) {
+
+        console.error('Contact error:', error);
+
+        res.status(500).json({ 
+
+            success: false, 
+
+            message: 'An error occurred. Please try again.' 
+
+        });
+
+    }
+
+});
+
+
+
 const server = app.listen(PORT, '0.0.0.0', () => {
-    const env = process.env.NODE_ENV || 'development';
-    console.log(`✅ Portfolio server running on port ${PORT} (${env})`);
-    console.log(`📱 Admin: http://localhost:${PORT}/admin.html`);
-    console.log(`🌍 Website: http://localhost:${PORT}`);
-    console.log(`💾 Database: ${dbPath}`);
-});
 
-// Graceful shutdown
-process.on('SIGTERM', () => {
-    console.log('Shutting down...');
-    server.close(() => {
-        db.close();
-        process.exit(0);
-    });
+    const env = process.env.NODE_ENV || 'development';
+
+    console.log(`✅ Portfolio server running on port ${PORT} (${env})`);
+
+    console.log(`📱 Admin: http\://localhost:${PORT}/admin.html`);
+
+    console.log(`🌍 Website: http\://localhost:${PORT}`);
+
 });

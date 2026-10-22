@@ -8,6 +8,7 @@
    let profile = {};
    let contactSettings = {};
    
+   // Don't hardcode credentials - they'll come from the server
    const $ = (id) => document.getElementById(id);
    
    function togglePassword(fieldId) {
@@ -16,41 +17,59 @@
      field.type = field.type === 'password' ? 'text' : 'password';
    }
    
-   // ============================================
-   // PROFILE MANAGEMENT - SERVER ONLY
-   // ============================================
+   function getDefaultProfile() {
+     return {
+       name: 'Your Name',
+       position: 'Multimedia Artist',
+       bio: 'Creative multimedia artist dedicated to creating innovative visual experiences.',
+       email: 'your@email.com'
+     };
+   }
+   
+   function getDefaultContactSettings() {
+     return {
+       email: 'your@email.com',
+       location: '',
+       socialLinks: []
+     };
+   }
+   
    async function loadProfile() {
+     // The server is the shared source of truth. Browser storage is only a fallback.
      try {
-       const token = localStorage.getItem('adminToken') || '';
-       const response = await fetch('/api/admin/profile', {
-         headers: { 'Authorization': `Bearer ${token}` }
-       });
-       if (!response.ok) {
-         // Fallback: Try public endpoint
-         const publicResponse = await fetch('/api/profile');
-         profile = await publicResponse.json();
-       } else {
-         profile = await response.json();
-       }
+       const response = await fetch('/api/profile', { cache: 'no-store' });
+       if (!response.ok) throw new Error(`Profile API returned ${response.status}`);
+       profile = { ...getDefaultProfile(), ...(await response.json()) };
+       localStorage.setItem('portfolioProfile', JSON.stringify(profile));
      } catch (error) {
-       console.error('Error loading profile:', error);
-       profile = {};
+       console.warn('Could not load profile from server; using this browser cache.', error);
+       try { profile = { ...getDefaultProfile(), ...JSON.parse(localStorage.getItem('portfolioProfile') || '{}') }; }
+       catch { profile = getDefaultProfile(); }
      }
+     displayProfile();
    }
    
    async function loadContactSettings() {
+     // Always try the server first so edits appear consistently on this and other devices.
      try {
-       const token = localStorage.getItem('adminToken') || '';
-       const response = await fetch('/api/admin/contact-settings', {
-         headers: { 'Authorization': `Bearer ${token}` }
-       });
-       if (!response.ok) throw new Error('Failed to load');
-       const data = await response.json();
-       contactSettings = data.settings || {};
+       const response = await fetch('/api/contact-settings', { cache: 'no-store' });
+       if (!response.ok) throw new Error(`Contact API returned ${response.status}`);
+       contactSettings = { ...getDefaultContactSettings(), ...(await response.json()) };
+       localStorage.setItem('portfolioContacts', JSON.stringify(contactSettings));
      } catch (error) {
-       console.error('Error loading contact settings:', error);
-       contactSettings = {};
+       console.warn('Could not load contacts from server; using this browser cache.', error);
+       try { contactSettings = { ...getDefaultContactSettings(), ...JSON.parse(localStorage.getItem('portfolioContacts') || '{}') }; }
+       catch { contactSettings = getDefaultContactSettings(); }
      }
+     displayContactSettings();
+   }
+   
+   function saveProfile() {
+     localStorage.setItem('portfolioProfile', JSON.stringify(profile));
+   }
+   
+   function saveContactSettings() {
+     localStorage.setItem('portfolioContacts', JSON.stringify(contactSettings));
    }
    
    function displayProfile() {
@@ -70,81 +89,75 @@
      if (!container) return;
      
      container.innerHTML = '';
-     if (contactSettings.socialLinks && Array.isArray(contactSettings.socialLinks)) {
+     if (contactSettings.socialLinks && contactSettings.socialLinks.length > 0) {
        contactSettings.socialLinks.forEach((link) => {
          addSocialLinkUI(link.platform, link.url);
        });
      }
    }
    
-   // Save profile - SERVER ONLY, NO FALLBACK TO LOCALSTORAGE
    $('profileForm')?.addEventListener('submit', async (e) => {
      e.preventDefault();
-     const submit = e.target.querySelector('button[type="submit"]');
-     submit.disabled = true;
-     const oldText = submit.textContent;
-     submit.textContent = 'Saving...';
-     
+     profile = {
+       name: $('profileName').value.trim(),
+       position: $('profilePosition').value.trim(),
+       bio: $('profileBio').value.trim(),
+       email: $('profileEmail').value.trim()
+     };
+     const submitButton = e.target.querySelector('button[type="submit"]');
+     if (submitButton) { submitButton.disabled = true; }
      try {
        const token = localStorage.getItem('adminToken') || '';
        const response = await fetch('/api/admin/profile', {
          method: 'POST',
-         headers: {
-           'Content-Type': 'application/json',
-           'Authorization': `Bearer ${token}`
-         },
-         body: JSON.stringify({
-           name: $('profileName').value.trim(),
-           position: $('profilePosition').value.trim(),
-           bio: $('profileBio').value.trim(),
-           email: $('profileEmail').value.trim()
-         })
+         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+         body: JSON.stringify(profile)
        });
-       
-       if (!response.ok) {
-         const error = await response.json();
-         showToast(error.message || 'Failed to save profile', 'error');
-         return;
-       }
-       
-       const data = await response.json();
-       profile = data.profile;
-       showToast('Profile saved successfully!');
+       const data = await response.json().catch(() => ({}));
+       if (!response.ok || data.success === false) throw new Error(data.message || data.error || `Server error (${response.status})`);
+       profile = data.profile || profile;
+       localStorage.setItem('portfolioProfile', JSON.stringify(profile));
+       displayProfile();
+       showToast('Profile saved successfully.');
      } catch (error) {
-       console.error('Error:', error);
-       showToast('Error saving profile', 'error');
+       console.error('Error saving profile:', error);
+       showToast(`Profile was NOT saved: ${error.message}. Check that the server is running.`, 'error');
      } finally {
-       submit.disabled = false;
-       submit.textContent = oldText;
+       if (submitButton) submitButton.disabled = false;
      }
    });
    
-   // Save contact settings - SERVER ONLY
    $('contactsForm')?.addEventListener('submit', async (e) => {
      e.preventDefault();
-     const submit = e.target.querySelector('button[type="submit"]');
-     submit.disabled = true;
-     const oldText = submit.textContent;
-     submit.textContent = 'Saving...';
+     
+     const email = $('contactEmail').value.trim();
+     const location = $('contactLocation').value.trim();
+     
+     if (!email) {
+       showToast('Email is required.', 'error');
+       return;
+     }
+     
+     // Collect social links
+     const socialLinks = [];
+     document.querySelectorAll('.social-link-item').forEach(item => {
+       const platform = item.querySelector('.social-platform')?.value.trim();
+       const url = item.querySelector('.social-url')?.value.trim();
+       if (platform && url) {
+         socialLinks.push({ platform, url });
+       }
+     });
+     
+     const newSettings = { email, location, socialLinks };
+     // Do not claim success or update the cache until the server confirms the save.
+     
+     // Save to server
+     const button = e.target.querySelector('button[type="submit"]');
+     button.disabled = true;
+     const oldText = button.textContent;
+     button.textContent = 'Saving...';
      
      try {
-       const email = $('contactEmail').value.trim();
-       const location = $('contactLocation').value.trim();
-       
-       if (!email) {
-         showToast('Email is required', 'error');
-         return;
-       }
-       
-       const socialLinks = [];
-       document.querySelectorAll('.social-link-item').forEach(item => {
-         const platform = item.querySelector('.social-platform')?.value.trim();
-         const url = item.querySelector('.social-url')?.value.trim();
-         if (platform && url) {
-           socialLinks.push({ platform, url });
-         }
-       });
-       
        const token = localStorage.getItem('adminToken') || '';
        const response = await fetch('/api/admin/contact-settings', {
          method: 'POST',
@@ -159,21 +172,23 @@
          })
        });
        
-       if (!response.ok) {
-         const error = await response.json();
-         showToast(error.message || 'Failed to save contact settings', 'error');
-         return;
+       if (response.ok) {
+         const data = await response.json();
+         if (data.success === false) throw new Error(data.message || 'Server rejected the save');
+         contactSettings = data.settings || newSettings;
+         localStorage.setItem('portfolioContacts', JSON.stringify(contactSettings));
+         displayContactSettings();
+         showToast('Contact settings saved successfully.');
+       } else {
+         const data = await response.json().catch(() => ({}));
+         throw new Error(data.message || data.error || `Server error (${response.status})`);
        }
-       
-       const data = await response.json();
-       contactSettings = data.settings;
-       showToast('Contact settings saved successfully!');
      } catch (error) {
-       console.error('Error:', error);
-       showToast('Error saving contact settings', 'error');
+       console.error('Error saving contacts:', error);
+       showToast(`Contacts were NOT saved: ${error.message}. Check that the server is running.`, 'error');
      } finally {
-       submit.disabled = false;
-       submit.textContent = oldText;
+       button.disabled = false;
+       button.textContent = oldText;
      }
    });
    
@@ -210,19 +225,44 @@
    }
    
    function loadProjects() {
-     // Remove localStorage completely - use server only
-   }
-   
-   // Load projects from server only
-   async function loadProjectsFromServer() {
      try {
-       const response = await fetch('/api/projects');
-       if (!response.ok) throw new Error('Failed to load projects');
-       projects = await response.json();
+       const stored = localStorage.getItem('portfolioProjects');
+       projects = stored ? JSON.parse(stored) : [];
        if (!Array.isArray(projects)) projects = [];
      } catch (error) {
-       console.error('Error loading projects:', error);
+       console.error('Could not read portfolioProjects:', error);
        projects = [];
+     }
+   }
+   
+   // If the existing Node server already has projects in projects.json, import them
+   // once when browser storage is empty. This keeps the unchanged portfolio script working.
+   async function loadProjectsWithServerFallback() {
+     loadProjects();
+     if (projects.length) return;
+   
+     try {
+       const response = await fetch('/api/projects');
+       if (!response.ok) return;
+       const serverProjects = await response.json();
+       if (Array.isArray(serverProjects) && serverProjects.length) {
+         projects = serverProjects;
+         saveProjectsToStorage();
+       }
+     } catch (error) {
+       // API fallback is optional; localStorage remains the primary shared store.
+       console.info('No local project API available; using browser storage.', error);
+     }
+   }
+   
+   function saveProjectsToStorage() {
+     try {
+       localStorage.setItem('portfolioProjects', JSON.stringify(projects));
+       return true;
+     } catch (error) {
+       console.error(error);
+       showToast('Could not save to browser storage. Storage may be full.', 'error');
+       return false;
      }
    }
    
@@ -244,6 +284,7 @@
      const username = $('username').value.trim();
      const password = $('password').value;
    
+     // Validate credentials with the server
      try {
        const response = await fetch('/api/admin/login', {
          method: 'POST',
@@ -258,22 +299,20 @@
        }
        
        const data = await response.json();
+       
+       // Store secure token
        localStorage.setItem('adminToken', data.token || 'admin-session-' + Date.now());
        
        isLoggedIn = true;
        $('loginPage').style.display = 'none';
        $('adminDashboard').style.display = 'block';
        $('currentUser').textContent = username;
-       
-       // Load all data from server
-       await loadProjectsFromServer();
+       await loadProjectsWithServerFallback();
        await loadProfile();
        await loadContactSettings();
-       
        displayProjects();
        displayProfile();
-       displayContactSettings();
-       await loadMessages();
+       loadMessages();
        showSection('projects');
        showToast('Logged in successfully!');
      } catch (error) {
@@ -545,6 +584,7 @@
      try {
        const formData = new FormData();
        
+       // Add text fields
        formData.append('title', title);
        formData.append('category', category);
        formData.append('overview', overview);
@@ -553,6 +593,7 @@
        formData.append('tools', JSON.stringify(tools));
        formData.append('link', link);
        
+       // Add files
        if (thumbnailFile) {
          formData.append('thumbnail', thumbnailFile);
        }
@@ -565,6 +606,7 @@
          formData.append('video', videoFile);
        }
        
+       // Upload to server
        const method = wasEditing ? 'PUT' : 'POST';
        const url = wasEditing 
          ? `/api/admin/projects/${editingProjectId}`
@@ -581,12 +623,23 @@
        
        if (!response.ok) {
          const error = await response.json();
-         showToast(error.error || error.message || 'Upload failed', 'error');
-         return;
+         throw new Error(error.error || error.message || 'Upload failed');
        }
        
-       // Reload projects from server
-       await loadProjectsFromServer();
+       const result = await response.json();
+       
+       // Update local projects list
+       if (wasEditing) {
+         const idx = projects.findIndex(p => p.id === editingProjectId);
+         if (idx >= 0) {
+           projects[idx] = result.project;
+         }
+       } else {
+         projects.push(result.project);
+       }
+       
+       // Save to localStorage
+       localStorage.setItem('portfolioProjects', JSON.stringify(projects));
        
        resetForm();
        displayProjects();
@@ -783,13 +836,13 @@
      const newPassword = $('newPassword').value;
      const confirmPassword = $('confirmPassword').value;
      
-     if (newPassword.length < 6) {
-       showToast('Password must be at least 6 characters long.', 'error');
+     if (newPassword !== confirmPassword) {
+       showToast('New passwords do not match.', 'error');
        return;
      }
      
-     if (newPassword !== confirmPassword) {
-       showToast('Passwords do not match.', 'error');
+     if (newPassword.length < 6) {
+       showToast('Password must be at least 6 characters long.', 'error');
        return;
      }
      
@@ -818,18 +871,13 @@
          return;
        }
        
-       showToast('Password updated successfully! Please login again with your new password.');
-       // Log out and redirect to login
-       setTimeout(() => {
-         logout();
-       }, 2000);
-       
+       showToast('Password updated successfully!');
+       $('changePasswordForm').reset();
      } catch (error) {
        console.error('Error:', error);
        showToast('Error updating password. Please try again.', 'error');
      } finally {
        button.disabled = false;
        button.textContent = oldText;
-       $('changePasswordForm').reset();
      }
    });
