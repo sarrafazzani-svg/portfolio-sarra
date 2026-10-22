@@ -89,7 +89,7 @@
      }
    }
    
-   $('profileForm')?.addEventListener('submit', (e) => {
+   $('profileForm')?.addEventListener('submit', async (e) => {
      e.preventDefault();
      profile = {
        name: $('profileName').value.trim(),
@@ -98,7 +98,28 @@
        email: $('profileEmail').value.trim()
      };
      saveProfile();
-     showToast('Profile saved.');
+     
+     // Save to server
+     try {
+       const token = localStorage.getItem('adminToken') || '';
+       const response = await fetch('/api/admin/profile', {
+         method: 'POST',
+         headers: {
+           'Content-Type': 'application/json',
+           'Authorization': `Bearer ${token}`
+         },
+         body: JSON.stringify(profile)
+       });
+       
+       if (response.ok) {
+         showToast('Profile saved to server!');
+       } else {
+         showToast('Profile saved locally (server error).', 'error');
+       }
+     } catch (error) {
+       console.error('Error saving profile to server:', error);
+       showToast('Profile saved locally (server unavailable).', 'error');
+     }
    });
    
    $('contactsForm')?.addEventListener('submit', async (e) => {

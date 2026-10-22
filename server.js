@@ -93,6 +93,36 @@ const credentialsFile = path.join(__dirname, '.admin-credentials.json');
 // Contact settings file
 const contactSettingsFile = path.join(__dirname, '.contact-settings.json');
 
+// Profile data file
+const profileFile = path.join(__dirname, '.profile.json');
+
+function loadProfile() {
+    try {
+        if (fs.existsSync(profileFile)) {
+            return JSON.parse(fs.readFileSync(profileFile, 'utf8'));
+        }
+    } catch (e) {
+        console.log('Could not load profile');
+    }
+    
+    // Default profile
+    return {
+        name: 'Your Name',
+        position: 'Multimedia Artist',
+        bio: 'Creative multimedia artist dedicated to creating innovative visual experiences.',
+        email: 'your@email.com'
+    };
+}
+
+function saveProfile(profile) {
+    try {
+        fs.writeFileSync(profileFile, JSON.stringify(profile, null, 2), { mode: 0o600 });
+        console.log('✅ Profile saved');
+    } catch (e) {
+        console.error('Could not save profile:', e);
+    }
+}
+
 function loadContactSettings() {
     try {
         if (fs.existsSync(contactSettingsFile)) {
@@ -214,6 +244,42 @@ function verifyToken(req, res, next) {
         next();
     });
 }
+
+// ============================================
+// PROFILE ENDPOINTS
+// ============================================
+app.get('/api/profile', (req, res) => {
+    try {
+        const profile = loadProfile();
+        res.json(profile);
+    } catch (error) {
+        console.error('Error loading profile:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/admin/profile', verifyToken, (req, res) => {
+    try {
+        const { name, position, bio, email } = req.body;
+        
+        if (!name || !email) {
+            return res.status(400).json({ success: false, message: 'Name and email are required' });
+        }
+        
+        const profile = {
+            name: name.trim(),
+            position: (position || '').trim(),
+            bio: (bio || '').trim(),
+            email: email.trim()
+        };
+        
+        saveProfile(profile);
+        res.json({ success: true, profile });
+    } catch (error) {
+        console.error('Error saving profile:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
 
 // ============================================
 // CONTACT SETTINGS ENDPOINTS

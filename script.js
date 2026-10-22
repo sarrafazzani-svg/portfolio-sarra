@@ -518,7 +518,27 @@ window.addEventListener('scroll', updateActiveNavLink);
 // LOAD PROFILE
 // ============================================
 
-function loadProfile() {
+async function loadProfile() {
+    try {
+        // Try to load from server first
+        const response = await fetch('/api/profile');
+        if (response.ok) {
+            const profile = await response.json();
+            document.getElementById('heroName').textContent = profile.name || 'Find Poetry in Motion';
+            document.getElementById('heroPosition').textContent = profile.position || 'Creative professional';
+            
+            // Update About section bio
+            const bioElement = document.querySelector('.about-text p:first-of-type');
+            if (bioElement && profile.bio) {
+                bioElement.textContent = profile.bio;
+            }
+            return;
+        }
+    } catch (e) {
+        console.log('Could not load profile from server, trying localStorage');
+    }
+    
+    // Fallback to localStorage
     const stored = localStorage.getItem('portfolioProfile');
     if (stored) {
         try {
