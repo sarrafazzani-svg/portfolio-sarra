@@ -520,14 +520,13 @@ window.addEventListener('scroll', updateActiveNavLink);
 
 async function loadProfile() {
     try {
-        // Try to load from server first
+        // Always load from server first - this is the source of truth
         const response = await fetch('/api/profile');
         if (response.ok) {
             const profile = await response.json();
             document.getElementById('heroName').textContent = profile.name || 'Find Poetry in Motion';
             document.getElementById('heroPosition').textContent = profile.position || 'Creative professional';
             
-            // Update About section bio
             const bioElement = document.querySelector('.about-text p:first-of-type');
             if (bioElement && profile.bio) {
                 bioElement.textContent = profile.bio;
@@ -535,25 +534,7 @@ async function loadProfile() {
             return;
         }
     } catch (e) {
-        console.log('Could not load profile from server, trying localStorage');
-    }
-    
-    // Fallback to localStorage
-    const stored = localStorage.getItem('portfolioProfile');
-    if (stored) {
-        try {
-            const profile = JSON.parse(stored);
-            document.getElementById('heroName').textContent = profile.name || 'Find Poetry in Motion';
-            document.getElementById('heroPosition').textContent = profile.position || 'Creative professional';
-            
-            // Update About section bio
-            const bioElement = document.querySelector('.about-text p:first-of-type');
-            if (bioElement && profile.bio) {
-                bioElement.textContent = profile.bio;
-            }
-        } catch (e) {
-            console.log('Could not load profile');
-        }
+        console.log('Could not load profile from server');
     }
 }
 
@@ -686,40 +667,21 @@ async function loadAndDisplayContactInfo() {
 }
 
 // ============================================
-// LOAD PROJECTS FROM STORAGE (PRIMARY)
+// LOAD PROJECTS FROM SERVER (ALWAYS - SERVER IS SOURCE OF TRUTH)
 // ============================================
 
-function loadProjectsFromStorage() {
-    const stored = localStorage.getItem('portfolioProjects');
-    if (stored) {
-        try {
-            projects = JSON.parse(stored);
-            console.log('Loaded ' + projects.length + ' projects from localStorage');
+async function loadProjectsFromServer() {
+    try {
+        const response = await fetch('/api/projects');
+        if (response.ok) {
+            projects = await response.json();
+            console.log('Loaded ' + projects.length + ' projects from server');
             return true;
-        } catch (e) {
-            console.log('Could not load projects from localStorage');
-            return false;
         }
+    } catch (e) {
+        console.log('Could not load projects from server');
     }
     return false;
-}
-
-// ============================================
-// LOAD PROJECTS FROM JSON (FALLBACK)
-// ============================================
-
-async function loadProjectsFromJSON() {
-    try {
-        const response = await fetch('projects.json');
-        const data = await response.json();
-        projects = data;
-        console.log('Loaded ' + projects.length + ' projects from projects.json');
-        
-        // Save to localStorage for consistency
-        localStorage.setItem('portfolioProjects', JSON.stringify(projects));
-    } catch (e) {
-        console.log('Could not load projects from JSON');
-    }
 }
 
 // ============================================
@@ -730,11 +692,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     loadProfile();
     loadAndDisplayContactInfo();
     
-    // Try localStorage first (admin changes), then JSON as fallback
-    const hasLocalStorage = loadProjectsFromStorage();
-    if (!hasLocalStorage) {
-        await loadProjectsFromJSON();
-    }
+    // Load projects from server (this is now the PRIMARY source)
+    await loadProjectsFromServer();
     
     initArcGallery();
     generateProjectsGrid();
