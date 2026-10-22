@@ -36,7 +36,28 @@ transporter.verify((error, success) => {
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
-app.use(express.static('.'));
+
+// Performance optimization: Add compression and caching headers
+const compression = require('compression');
+app.use(compression());
+
+// Cache static files for 1 hour (3600 seconds)
+app.use(express.static('.', {
+    maxAge: '1h',
+    etag: false
+}));
+
+// Add caching headers for specific file types
+app.use((req, res, next) => {
+    if (req.url.endsWith('.js') || req.url.endsWith('.css')) {
+        res.set('Cache-Control', 'public, max-age=3600'); // 1 hour
+    } else if (req.url.endsWith('.html')) {
+        res.set('Cache-Control', 'public, max-age=300'); // 5 minutes for HTML
+    } else if (req.url.match(/\.(jpg|jpeg|png|gif|webp|svg)$/)) {
+        res.set('Cache-Control', 'public, max-age=86400'); // 24 hours for images
+    }
+    next();
+});
 
 // Storage setup
 const storage = multer.diskStorage({

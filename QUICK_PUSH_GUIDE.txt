@@ -1,0 +1,95 @@
+================================================================================
+                    PUSH FIXES TO RENDER - QUICK GUIDE
+================================================================================
+
+THREE ISSUES FIXED:
+✅ Mobile gallery now visible on phones
+✅ Project images display on all devices
+✅ Your name shows in center circle
+
+================================================================================
+                            STEP 1: PUSH CHANGES
+================================================================================
+
+Open Command Prompt and navigate to your project:
+
+    cd /d C:\Users\SARRA\Downloads\portSarra
+
+Then copy-paste these commands ONE AT A TIME:
+
+    git add styles.css script.js
+
+    git commit -m "Fix responsive mobile gallery and project loading"
+
+    git push origin main
+
+Wait 1-2 minutes for Render to auto-deploy.
+
+================================================================================
+                            STEP 2: TEST ON DEVICES
+================================================================================
+
+After deployment completes, test your site:
+
+📱 MOBILE PHONE:
+- Go to: https://portfolio-sarra.onrender.com
+- Landscape & Portrait
+- Gallery visible? ✓
+- Images showing? ✓
+- Name in center? ✓
+
+💻 LAPTOP (1920px):
+- Gallery full size? ✓
+- Images loaded? ✓
+- Animation smooth? ✓
+
+📲 TABLET (768px - 1024px):
+- Gallery fits screen? ✓
+- Text readable? ✓
+- Touch works? ✓
+
+================================================================================
+                          WHAT WAS FIXED
+================================================================================
+
+1. MOBILE GALLERY
+   Before: Hidden/not responsive on phones
+   After: Shows scaled-down circle (500px) perfectly on all phones
+
+2. PROJECT IMAGES
+   Before: Gray boxes, images missing
+   After: Loads from API → localStorage → JSON in priority order
+          Images display on laptop, tablet, and phone
+
+3. HERO NAME
+   Before: Default "Find Poetry in Motion" text
+   After: Shows "Sarra Fazzani" as default
+          Updates when you change profile in admin
+
+================================================================================
+                        IF SOMETHING IS STILL WRONG
+================================================================================
+
+Images still gray?
+→ Go to /admin.html
+→ Add/edit your projects with images
+→ Refresh the site
+
+Mobile gallery too big?
+→ Wait 2 minutes for Render to fully deploy
+→ Clear browser cache (Ctrl+Shift+Delete)
+→ Hard refresh (Ctrl+Shift+R)
+
+Name not showing?
+→ It defaults to "Sarra Fazzani"
+→ To change, go to admin → edit profile
+
+================================================================================
+
+Ready? Run: PUSH_FIXES.bat
+
+Or manually run the git commands above.
+
+Your portfolio will be perfect on all devices! 🚀
+
+================================================================================
