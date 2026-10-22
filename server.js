@@ -6,7 +6,7 @@ const fs = require('fs');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const nodemailer = require('nodemailer');
-const Database = require('better-sqlite3');
+const sqlite3 = require('sqlite3').verbose();
 require('dotenv').config();
 
 const app = express();
@@ -17,69 +17,120 @@ const SECRET_KEY = process.env.SECRET_KEY || 'your-secret-key-change-in-producti
 // DATABASE INITIALIZATION
 // ============================================
 const dbPath = path.join(__dirname, 'portfolio.db');
-const db = new Database(dbPath);
-db.pragma('journal_mode = WAL');
+const db = new sqlite3.Database(dbPath, (err) => {
+    if (err) {
+        console.error('Database error:', err);
+    } else {
+        console.log('✅ Connected to database:', dbPath);
+        initializeDatabase();
+    }
+});
 
-// Create tables if they don't exist
-db.exec(`
-  CREATE TABLE IF NOT EXISTS profile (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    name TEXT NOT NULL DEFAULT 'Your Name',
-    position TEXT NOT NULL DEFAULT 'Multimedia Artist',
-    bio TEXT NOT NULL DEFAULT 'Creative multimedia artist dedicated to creating innovative visual experiences.',
-    email TEXT NOT NULL DEFAULT 'your@email.com'
-  );
+function initializeDatabase() {
+    db.serialize(() => {
+        // Create profile table
+        db.run(`
+            CREATE TABLE IF NOT EXISTS profile (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                name TEXT NOT NULL DEFAULT 'Your Name',
+                position TEXT NOT NULL DEFAULT 'Multimedia Artist',
+                bio TEXT NOT NULL DEFAULT 'Creative multimedia artist dedicated to creating innovative visual experiences.',
+                email TEXT NOT NULL DEFAULT 'your@email.com'
+            )
+        `);
 
-  CREATE TABLE IF NOT EXISTS contact_settings (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    email TEXT NOT NULL DEFAULT 'your@email.com',
-    location TEXT DEFAULT '',
-    social_links TEXT DEFAULT '[]'
-  );
+        // Create contact_settings table
+        db.run(`
+            CREATE TABLE IF NOT EXISTS contact_settings (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                email TEXT NOT NULL DEFAULT 'your@email.com',
+                location TEXT DEFAULT '',
+                social_links TEXT DEFAULT '[]'
+            )
+        `);
 
-  CREATE TABLE IF NOT EXISTS projects (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT NOT NULL,
-    category TEXT NOT NULL,
-    image TEXT,
-    images TEXT DEFAULT '[]',
-    video TEXT,
-    overview TEXT DEFAULT '',
-    challenge TEXT DEFAULT '',
-    solution TEXT DEFAULT '',
-    tools TEXT DEFAULT '[]',
-    link TEXT DEFAULT '',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+        // Create projects table
+        db.run(`
+            CREATE TABLE IF NOT EXISTS projects (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                category TEXT NOT NULL,
+                image TEXT,
+                images TEXT DEFAULT '[]',
+                video TEXT,
+                overview TEXT DEFAULT '',
+                challenge TEXT DEFAULT '',
+                solution TEXT DEFAULT '',
+                tools TEXT DEFAULT '[]',
+                link TEXT DEFAULT '',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
 
-  CREATE TABLE IF NOT EXISTS contact_messages (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    email TEXT NOT NULL,
-    message TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+        // Create contact_messages table
+        db.run(`
+            CREATE TABLE IF NOT EXISTS contact_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL,
+                message TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
 
-  CREATE TABLE IF NOT EXISTS admin_credentials (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    username TEXT NOT NULL DEFAULT 'admin',
-    password_hash TEXT NOT NULL
-  );
+        // Create admin_credentials table
+        db.run(`
+            CREATE TABLE IF NOT EXISTS admin_credentials (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                username TEXT NOT NULL DEFAULT 'admin',
+                password_hash TEXT NOT NULL
+            )
+        `);
 
-  -- Initialize default profile if empty
-  INSERT OR IGNORE INTO profile (id, name, position, bio, email) 
-  VALUES (1, 'Your Name', 'Multimedia Artist', 'Creative multimedia artist dedicated to creating innovative visual experiences.', 'your@email.com');
+        // Initialize default profile
+        db.run(`INSERT OR IGNORE INTO profile (id, name, position, bio, email) 
+                VALUES (1, 'Your Name', 'Multimedia Artist', 'Creative multimedia artist dedicated to creating innovative visual experiences.', 'your@email.com')`);
 
-  -- Initialize default contact settings if empty
-  INSERT OR IGNORE INTO contact_settings (id, email, location, social_links)
-  VALUES (1, 'your@email.com', '', '[]');
+        // Initialize default contact settings
+        db.run(`INSERT OR IGNORE INTO contact_settings (id, email, location, social_links)
+                VALUES (1, 'your@email.com', '', '[]')`);
 
-  -- Initialize default admin credentials if empty
-  INSERT OR IGNORE INTO admin_credentials (id, username, password_hash)
-  VALUES (1, 'admin', '${bcrypt.hashSync('admin123', 10)}');
-`);
+        // Initialize default admin credentials
+        const defaultHash = bcrypt.hashSync('admin123', 10);
+        db.run(`INSERT OR IGNORE INTO admin_credentials (id, username, password_hash)
+                VALUES (1, 'admin', ?)`, [defaultHash]);
 
-console.log('✅ Database initialized at:', dbPath);
+        console.log('✅ Database tables initialized');
+    });
+}
+
+// Helper to run database queries with callbacks
+function dbRun(sql, params = []) {
+    return new Promise((resolve, reject) => {
+        db.run(sql, params, function(err) {
+            if (err) reject(err);
+            else resolve(this);
+        });
+    });
+}
+
+function dbGet(sql, params = []) {
+    return new Promise((resolve, reject) => {
+        db.get(sql, params, (err, row) => {
+            if (err) reject(err);
+            else resolve(row);
+        });
+    });
+}
+
+function dbAll(sql, params = []) {
+    return new Promise((resolve, reject) => {
+        db.all(sql, params, (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows);
+        });
+    });
+}
 
 // ============================================
 // EMAIL CONFIGURATION
@@ -157,12 +208,11 @@ const upload = multer({
 // ============================================
 // AUTHENTICATION
 // ============================================
-app.post('/api/admin/login', (req, res) => {
+app.post('/api/admin/login', async (req, res) => {
     try {
         const { username, password } = req.body;
         
-        const adminStmt = db.prepare('SELECT * FROM admin_credentials WHERE id = 1');
-        const admin = adminStmt.get();
+        const admin = await dbGet('SELECT * FROM admin_credentials WHERE id = 1');
         
         if (!admin || username !== admin.username || !bcrypt.compareSync(password, admin.password_hash)) {
             return res.status(401).json({ success: false, message: 'Invalid credentials' });
@@ -207,10 +257,9 @@ function verifyToken(req, res, next) {
 // ============================================
 // PROFILE ENDPOINTS
 // ============================================
-app.get('/api/profile', (req, res) => {
+app.get('/api/profile', async (req, res) => {
     try {
-        const stmt = db.prepare('SELECT * FROM profile WHERE id = 1');
-        const profile = stmt.get();
+        const profile = await dbGet('SELECT * FROM profile WHERE id = 1');
         res.json(profile || {});
     } catch (error) {
         console.error('Error loading profile:', error);
@@ -218,7 +267,7 @@ app.get('/api/profile', (req, res) => {
     }
 });
 
-app.post('/api/admin/profile', verifyToken, (req, res) => {
+app.post('/api/admin/profile', verifyToken, async (req, res) => {
     try {
         const { name, position, bio, email } = req.body;
         
@@ -226,14 +275,12 @@ app.post('/api/admin/profile', verifyToken, (req, res) => {
             return res.status(400).json({ success: false, message: 'Name and email are required' });
         }
         
-        const stmt = db.prepare(`
-            INSERT OR REPLACE INTO profile (id, name, position, bio, email)
-            VALUES (1, ?, ?, ?, ?)
-        `);
+        await dbRun(
+            `INSERT OR REPLACE INTO profile (id, name, position, bio, email) VALUES (1, ?, ?, ?, ?)`,
+            [name.trim(), position?.trim() || '', bio?.trim() || '', email.trim()]
+        );
         
-        stmt.run(name.trim(), position?.trim() || '', bio?.trim() || '', email.trim());
-        
-        const profile = db.prepare('SELECT * FROM profile WHERE id = 1').get();
+        const profile = await dbGet('SELECT * FROM profile WHERE id = 1');
         console.log('✅ Profile updated');
         res.json({ success: true, profile });
     } catch (error) {
@@ -245,23 +292,14 @@ app.post('/api/admin/profile', verifyToken, (req, res) => {
 // ============================================
 // CONTACT SETTINGS ENDPOINTS
 // ============================================
-app.get('/api/contact-settings', (req, res) => {
+app.get('/api/contact-settings', async (req, res) => {
     try {
-        const stmt = db.prepare('SELECT * FROM contact_settings WHERE id = 1');
-        const settings = stmt.get();
-        
-        if (!settings) {
-            return res.json({
-                email: 'your@email.com',
-                location: '',
-                socialLinks: []
-            });
-        }
+        const settings = await dbGet('SELECT * FROM contact_settings WHERE id = 1');
         
         res.json({
-            email: settings.email,
-            location: settings.location,
-            socialLinks: JSON.parse(settings.social_links)
+            email: settings?.email || 'your@email.com',
+            location: settings?.location || '',
+            socialLinks: settings ? JSON.parse(settings.social_links) : []
         });
     } catch (error) {
         console.error('Error:', error);
@@ -269,10 +307,9 @@ app.get('/api/contact-settings', (req, res) => {
     }
 });
 
-app.get('/api/admin/contact-settings', verifyToken, (req, res) => {
+app.get('/api/admin/contact-settings', verifyToken, async (req, res) => {
     try {
-        const stmt = db.prepare('SELECT * FROM contact_settings WHERE id = 1');
-        const settings = stmt.get();
+        const settings = await dbGet('SELECT * FROM contact_settings WHERE id = 1');
         
         res.json({
             success: true,
@@ -288,7 +325,7 @@ app.get('/api/admin/contact-settings', verifyToken, (req, res) => {
     }
 });
 
-app.post('/api/admin/contact-settings', verifyToken, (req, res) => {
+app.post('/api/admin/contact-settings', verifyToken, async (req, res) => {
     try {
         const { email, location, socialLinks } = req.body;
         
@@ -302,12 +339,10 @@ app.post('/api/admin/contact-settings', verifyToken, (req, res) => {
             []
         );
         
-        const stmt = db.prepare(`
-            INSERT OR REPLACE INTO contact_settings (id, email, location, social_links)
-            VALUES (1, ?, ?, ?)
-        `);
-        
-        stmt.run(email.trim(), location?.trim() || '', socialLinksJson);
+        await dbRun(
+            `INSERT OR REPLACE INTO contact_settings (id, email, location, social_links) VALUES (1, ?, ?, ?)`,
+            [email.trim(), location?.trim() || '', socialLinksJson]
+        );
         
         console.log('✅ Contact settings updated');
         res.json({ 
@@ -327,7 +362,7 @@ app.post('/api/admin/contact-settings', verifyToken, (req, res) => {
 // ============================================
 // SECURITY ENDPOINTS
 // ============================================
-app.post('/api/admin/security/change-username', verifyToken, (req, res) => {
+app.post('/api/admin/security/change-username', verifyToken, async (req, res) => {
     try {
         const { currentPassword, newUsername } = req.body;
         
@@ -339,15 +374,13 @@ app.post('/api/admin/security/change-username', verifyToken, (req, res) => {
             return res.status(400).json({ message: 'Username must be at least 3 characters long' });
         }
         
-        const adminStmt = db.prepare('SELECT * FROM admin_credentials WHERE id = 1');
-        const admin = adminStmt.get();
+        const admin = await dbGet('SELECT * FROM admin_credentials WHERE id = 1');
         
         if (!bcrypt.compareSync(currentPassword, admin.password_hash)) {
             return res.status(401).json({ message: 'Current password is incorrect' });
         }
         
-        const updateStmt = db.prepare('UPDATE admin_credentials SET username = ? WHERE id = 1');
-        updateStmt.run(newUsername);
+        await dbRun('UPDATE admin_credentials SET username = ? WHERE id = 1', [newUsername]);
         
         console.log('✅ Admin username changed');
         res.json({ success: true, message: 'Username updated successfully' });
@@ -357,7 +390,7 @@ app.post('/api/admin/security/change-username', verifyToken, (req, res) => {
     }
 });
 
-app.post('/api/admin/security/change-password', verifyToken, (req, res) => {
+app.post('/api/admin/security/change-password', verifyToken, async (req, res) => {
     try {
         const { currentPassword, newPassword } = req.body;
         
@@ -369,16 +402,14 @@ app.post('/api/admin/security/change-password', verifyToken, (req, res) => {
             return res.status(400).json({ message: 'Password must be at least 6 characters long' });
         }
         
-        const adminStmt = db.prepare('SELECT * FROM admin_credentials WHERE id = 1');
-        const admin = adminStmt.get();
+        const admin = await dbGet('SELECT * FROM admin_credentials WHERE id = 1');
         
         if (!bcrypt.compareSync(currentPassword, admin.password_hash)) {
             return res.status(401).json({ message: 'Current password is incorrect' });
         }
         
         const newHash = bcrypt.hashSync(newPassword, 10);
-        const updateStmt = db.prepare('UPDATE admin_credentials SET password_hash = ? WHERE id = 1');
-        updateStmt.run(newHash);
+        await dbRun('UPDATE admin_credentials SET password_hash = ? WHERE id = 1', [newHash]);
         
         console.log('✅ Admin password changed');
         res.json({ success: true, message: 'Password updated successfully' });
@@ -391,15 +422,15 @@ app.post('/api/admin/security/change-password', verifyToken, (req, res) => {
 // ============================================
 // PROJECTS ENDPOINTS
 // ============================================
-app.get('/api/projects', (req, res) => {
+app.get('/api/projects', async (req, res) => {
     try {
-        const stmt = db.prepare('SELECT * FROM projects ORDER BY created_at DESC');
-        const projects = stmt.all().map(p => ({
+        const projects = await dbAll('SELECT * FROM projects ORDER BY created_at DESC');
+        const result = projects.map(p => ({
             ...p,
             images: JSON.parse(p.images),
             tools: JSON.parse(p.tools)
         }));
-        res.json(projects);
+        res.json(result);
     } catch (error) {
         console.error('Error loading projects:', error);
         res.status(500).json({ error: error.message });
@@ -410,7 +441,7 @@ app.post('/api/admin/projects', verifyToken, upload.fields([
     { name: 'thumbnail', maxCount: 1 },
     { name: 'images', maxCount: 10 },
     { name: 'video', maxCount: 1 }
-]), (req, res) => {
+]), async (req, res) => {
     try {
         const { title, category, overview, challenge, solution, tools, link } = req.body;
         
@@ -431,25 +462,24 @@ app.post('/api/admin/projects', verifyToken, upload.fields([
         const thumbnailUrl = `/uploads/${thumbnail.filename}`;
         const videoUrl = video ? `/uploads/${video.filename}` : '';
         
-        const stmt = db.prepare(`
-            INSERT INTO projects (title, category, image, images, video, overview, challenge, solution, tools, link)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `);
-        
-        const result = stmt.run(
-            title.trim(),
-            category.trim(),
-            thumbnailUrl,
-            JSON.stringify(imageUrls),
-            videoUrl,
-            overview?.trim() || '',
-            challenge?.trim() || '',
-            solution?.trim() || '',
-            JSON.stringify(toolsArray),
-            link?.trim() || ''
+        const result = await dbRun(
+            `INSERT INTO projects (title, category, image, images, video, overview, challenge, solution, tools, link)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                title.trim(),
+                category.trim(),
+                thumbnailUrl,
+                JSON.stringify(imageUrls),
+                videoUrl,
+                overview?.trim() || '',
+                challenge?.trim() || '',
+                solution?.trim() || '',
+                JSON.stringify(toolsArray),
+                link?.trim() || ''
+            ]
         );
         
-        const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(result.lastInsertRowid);
+        const project = await dbGet('SELECT * FROM projects WHERE id = ?', [result.lastID]);
         project.images = JSON.parse(project.images);
         project.tools = JSON.parse(project.tools);
         
@@ -465,13 +495,12 @@ app.put('/api/admin/projects/:id', verifyToken, upload.fields([
     { name: 'thumbnail', maxCount: 1 },
     { name: 'images', maxCount: 10 },
     { name: 'video', maxCount: 1 }
-]), (req, res) => {
+]), async (req, res) => {
     try {
         const projectId = parseInt(req.params.id);
         const { title, category, overview, challenge, solution, tools, link } = req.body;
         
-        const existingStmt = db.prepare('SELECT * FROM projects WHERE id = ?');
-        const existing = existingStmt.get(projectId);
+        const existing = await dbGet('SELECT * FROM projects WHERE id = ?', [projectId]);
         
         if (!existing) {
             return res.status(404).json({ success: false, message: 'Project not found' });
@@ -488,27 +517,26 @@ app.put('/api/admin/projects/:id', verifyToken, upload.fields([
         const videoUrl = video ? `/uploads/${video.filename}` : existing.video;
         const toolsArray = typeof tools === 'string' ? JSON.parse(tools) : JSON.parse(existing.tools);
         
-        const stmt = db.prepare(`
-            UPDATE projects 
-            SET title = ?, category = ?, image = ?, images = ?, video = ?, overview = ?, challenge = ?, solution = ?, tools = ?, link = ?
-            WHERE id = ?
-        `);
-        
-        stmt.run(
-            title?.trim() || existing.title,
-            category?.trim() || existing.category,
-            thumbnailUrl,
-            JSON.stringify(imageUrls),
-            videoUrl,
-            overview?.trim() || existing.overview,
-            challenge?.trim() || existing.challenge,
-            solution?.trim() || existing.solution,
-            JSON.stringify(toolsArray),
-            link?.trim() || existing.link,
-            projectId
+        await dbRun(
+            `UPDATE projects 
+             SET title = ?, category = ?, image = ?, images = ?, video = ?, overview = ?, challenge = ?, solution = ?, tools = ?, link = ?
+             WHERE id = ?`,
+            [
+                title?.trim() || existing.title,
+                category?.trim() || existing.category,
+                thumbnailUrl,
+                JSON.stringify(imageUrls),
+                videoUrl,
+                overview?.trim() || existing.overview,
+                challenge?.trim() || existing.challenge,
+                solution?.trim() || existing.solution,
+                JSON.stringify(toolsArray),
+                link?.trim() || existing.link,
+                projectId
+            ]
         );
         
-        const updated = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
+        const updated = await dbGet('SELECT * FROM projects WHERE id = ?', [projectId]);
         updated.images = JSON.parse(updated.images);
         updated.tools = JSON.parse(updated.tools);
         
@@ -520,11 +548,10 @@ app.put('/api/admin/projects/:id', verifyToken, upload.fields([
     }
 });
 
-app.delete('/api/admin/projects/:id', verifyToken, (req, res) => {
+app.delete('/api/admin/projects/:id', verifyToken, async (req, res) => {
     try {
         const projectId = parseInt(req.params.id);
-        const stmt = db.prepare('DELETE FROM projects WHERE id = ?');
-        stmt.run(projectId);
+        await dbRun('DELETE FROM projects WHERE id = ?', [projectId]);
         
         console.log('✅ Project deleted');
         res.json({ success: true });
@@ -537,7 +564,7 @@ app.delete('/api/admin/projects/:id', verifyToken, (req, res) => {
 // ============================================
 // CONTACT MESSAGES ENDPOINTS
 // ============================================
-app.post('/api/contact', (req, res) => {
+app.post('/api/contact', async (req, res) => {
     try {
         const { name, email, message } = req.body;
         
@@ -545,8 +572,10 @@ app.post('/api/contact', (req, res) => {
             return res.status(400).json({ success: false, message: 'All fields are required' });
         }
         
-        const stmt = db.prepare('INSERT INTO contact_messages (name, email, message) VALUES (?, ?, ?)');
-        stmt.run(name.trim(), email.trim(), message.trim());
+        await dbRun(
+            'INSERT INTO contact_messages (name, email, message) VALUES (?, ?, ?)',
+            [name.trim(), email.trim(), message.trim()]
+        );
         
         console.log('✅ Contact message saved');
         res.json({ success: true, message: 'Message received! Thank you for contacting me.' });
@@ -556,10 +585,10 @@ app.post('/api/contact', (req, res) => {
     }
 });
 
-app.get('/api/admin/messages', verifyToken, (req, res) => {
+app.get('/api/admin/messages', verifyToken, async (req, res) => {
     try {
-        const stmt = db.prepare('SELECT * FROM contact_messages ORDER BY created_at DESC');
-        const messages = stmt.all().map((msg, index) => ({
+        const messages = await dbAll('SELECT * FROM contact_messages ORDER BY created_at DESC');
+        const result = messages.map((msg, index) => ({
             id: index,
             name: msg.name,
             email: msg.email,
@@ -567,23 +596,24 @@ app.get('/api/admin/messages', verifyToken, (req, res) => {
             date: new Date(msg.created_at).toLocaleString()
         }));
         
-        res.json({ success: true, messages });
+        res.json({ success: true, messages: result });
     } catch (error) {
         console.error('Error loading messages:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
 
-app.delete('/api/admin/messages/:id', verifyToken, (req, res) => {
+app.delete('/api/admin/messages/:id', verifyToken, async (req, res) => {
     try {
         const messageId = parseInt(req.params.id);
-        const stmt = db.prepare(`
-            DELETE FROM contact_messages 
-            WHERE rowid = (SELECT rowid FROM contact_messages ORDER BY created_at DESC LIMIT 1 OFFSET ?)
-        `);
-        stmt.run(messageId);
+        const messages = await dbAll('SELECT rowid FROM contact_messages ORDER BY created_at DESC');
         
-        console.log('✅ Message deleted');
+        if (messageId < messages.length) {
+            const rowid = messages[messageId].rowid;
+            await dbRun('DELETE FROM contact_messages WHERE rowid = ?', [rowid]);
+            console.log('✅ Message deleted');
+        }
+        
         res.json({ success: true });
     } catch (error) {
         console.error('Error deleting message:', error);
