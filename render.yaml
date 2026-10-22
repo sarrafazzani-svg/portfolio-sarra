@@ -7,8 +7,8 @@ services:
     startCommand: npm start
     envVars:
       - key: PORT
-        value: 3001
+        value: 3000
       - key: NODE_ENV
         value: production
       - key: SECRET_KEY
-        generateValue: true
+        value: jZn&Oz^P4sQ<.;,g
