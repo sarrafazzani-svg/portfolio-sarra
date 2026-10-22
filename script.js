@@ -16,67 +16,127 @@ let isHoveringProject = false;
 function initArcGallery() {
     const gallery = document.getElementById('arcGallery');
     const itemCount = projects.length;
-    const arcRadius = 500;
-    const startAngle = -90;
-    const arcSpan = 180;
-    const angleSlice = arcSpan / itemCount;
     
-    gallery.innerHTML = '';
-    
-    // Create duplicate items for seamless looping
-    const allProjects = [...projects, ...projects];
-    
-    allProjects.forEach((project, index) => {
-        const angle = startAngle + (angleSlice * index);
-        const radian = (angle * Math.PI) / 180;
+    // Calculate responsive radius based on gallery dimensions
+    // Use requestAnimationFrame to ensure gallery is rendered first
+    const calculateAndRender = () => {
+        const galleryWidth = gallery.offsetWidth || 1200;
+        const galleryHeight = gallery.offsetHeight || 600;
         
-        // Calculate position on arc
-        const x = arcRadius * Math.cos(radian);
-        const y = arcRadius * Math.sin(radian);
+        // Responsive arc radius calculation
+        // Desktop (2:1): 1200×600 → radius ~270px
+        // Tablet (95vw×75vw at 768px): ~730×547 → radius ~165px
+        // Mobile (90vw×90vw max 420px): 420×420 → radius ~100px
+        // This creates appropriate spacing on each device
+        let arcRadius;
+        if (window.innerWidth > 1024) {
+            // Preserve the existing laptop calculation
+            arcRadius = Math.min(
+                galleryWidth * 0.38,
+                galleryHeight * 0.60
+            );
+        } else if (window.innerWidth > 768) {
+            // Tablet: spread smaller cards around the circle
+            arcRadius = Math.min(
+                galleryWidth * 0.40,
+                galleryHeight * 0.43
+            );
+        } else {
+            // Phone: smaller cards and a more open loop
+            arcRadius = Math.min(
+                galleryWidth * 0.40,
+                galleryHeight * 0.40
+            );
+        }
         
-        // Calculate rotation for visual tilt
-        const rotationZ = angle + 90;
+        const startAngle = -90;
+        const arcSpan = 180;
+        const angleSlice = arcSpan / itemCount;
         
-        const item = document.createElement('div');
-        item.className = 'arc-item';
-        item.dataset.projectId = project.id;
-        item.dataset.angle = angle;
-        item.dataset.index = index;
+        gallery.innerHTML = '';
         
-        // Position the item
-        item.style.left = '50%';
-        item.style.top = '50%';
-        item.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px)) rotateZ(${rotationZ}deg)`;
+        // Create duplicate items for seamless looping
+        const allProjects = [...projects, ...projects];
         
-        item.innerHTML = `
-            <div class="arc-item-image" style="background-image: url('${project.image}'); background-size: cover; background-position: center;"></div>
-            <div class="arc-item-overlay">
-                <div class="arc-item-title">${project.title}</div>
-            </div>
-        `;
-        
-        item.addEventListener('mouseenter', () => {
-            isHoveringProject = true;
-            // Don't stop the entire carousel - just let the CSS freeze this item
-        });
-        
-        item.addEventListener('mouseleave', () => {
-            isHoveringProject = false;
-        });
-        
-        item.addEventListener('click', (e) => {
-            if (isHoveringProject) {
-                e.stopPropagation();
-                e.preventDefault();
-                openProjectDetail(project.id);
+        allProjects.forEach((project, index) => {
+            const angle = startAngle + (angleSlice * index);
+            const radian = (angle * Math.PI) / 180;
+            
+            // Calculate position on arc
+            const x = arcRadius * Math.cos(radian);
+            const y = arcRadius * Math.sin(radian);
+            
+            // Calculate rotation for visual tilt
+            const rotationZ = angle + 90;
+            
+            const item = document.createElement('div');
+            item.className = 'arc-item';
+            item.dataset.projectId = project.id;
+            item.dataset.angle = angle;
+            item.dataset.index = index;
+            
+            // Position the item
+            item.style.left = '50%';
+            item.style.top = '50%';
+            item.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px)) rotateZ(${rotationZ}deg)`;
+            
+            // Ensure image paths are valid and handle different formats
+            let imageUrl = project.image;
+            if (imageUrl) {
+                // If it's a data URL, use as-is
+                if (imageUrl.startsWith('data:')) {
+                    // Use data URL directly
+                } 
+                // If it's an http/https URL, use as-is
+                else if (imageUrl.startsWith('http')) {
+                    // Use full URL as-is
+                }
+                // If it's an uploaded file path
+                else if (imageUrl.startsWith('uploads/')) {
+                    imageUrl = imageUrl; // Already has correct path
+                }
+                // Otherwise, assume it's a filename in root directory
+                else {
+                    imageUrl = './' + imageUrl;
+                }
             }
+            
+            item.innerHTML = `
+                <div class="arc-item-image" style="background-image: url('${imageUrl}'); background-size: cover; background-position: center; background-repeat: no-repeat; width: 100%; height: 100%;"></div>
+                <div class="arc-item-overlay">
+                    <div class="arc-item-title">${project.title}</div>
+                </div>
+            `;
+            
+            item.addEventListener('mouseenter', () => {
+                isHoveringProject = true;
+            });
+            
+            item.addEventListener('mouseleave', () => {
+                isHoveringProject = false;
+            });
+            
+            item.addEventListener('click', (e) => {
+                if (isHoveringProject) {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    openProjectDetail(project.id);
+                }
+            });
+            
+            gallery.appendChild(item);
         });
         
-        gallery.appendChild(item);
-    });
+        // Start automatic rotation
+        startAutoRotation();
+    };
     
-    // Start automatic rotation
-    startAutoRotation();
+    // Ensure gallery is rendered before calculating
+    if (gallery.offsetWidth > 0) {
+        calculateAndRender();
+    } else {
+        requestAnimationFrame(calculateAndRender);
+    }
 }
 
 // ============================================
@@ -131,8 +191,16 @@ function openProjectDetail(projectId) {
     
     // Set main image (always show first image, not video)
     const mainImage = document.getElementById('detailMainImage');
-    mainImage.src = project.images[0];
-    // Don't make it clickable for zoom anymore
+    let imageSrc = project.images[0];
+    
+    // Ensure proper image path formatting
+    if (imageSrc && !imageSrc.startsWith('data:') && !imageSrc.startsWith('http')) {
+        if (!imageSrc.startsWith('uploads/')) {
+            imageSrc = './' + imageSrc;
+        }
+    }
+    
+    mainImage.src = imageSrc;
     mainImage.style.cursor = 'default';
     mainImage.onclick = null;
     
@@ -145,14 +213,21 @@ function openProjectDetail(projectId) {
     
     // Generate thumbnail gallery with images only
     const thumbnailsContainer = document.getElementById('detailThumbnails');
-    thumbnailsContainer.innerHTML = project.images.map((img, index) => `
+    thumbnailsContainer.innerHTML = project.images.map((img, index) => {
+        let thumbSrc = img;
+        if (thumbSrc && !thumbSrc.startsWith('data:') && !thumbSrc.startsWith('http')) {
+            if (!thumbSrc.startsWith('uploads/')) {
+                thumbSrc = './' + thumbSrc;
+            }
+        }
+        return `
         <img 
             class="detail-thumbnail ${index === 0 ? 'active' : ''}"
-            src="${img}" 
+            src="${thumbSrc}" 
             alt="Project image ${index + 1}"
-            onclick="changeDetailImage('${img}', this)"
+            onclick="changeDetailImage('${thumbSrc}', this)"
         >
-    `).join('');
+    `}).join('');
     
     // Populate tools
     const toolsList = document.getElementById('detailSectionTools');
@@ -305,9 +380,19 @@ function generateProjectsGrid() {
     const grid = document.getElementById('projectsGrid');
     if (!grid) return;
     
-    grid.innerHTML = projects.map(project => `
+    grid.innerHTML = projects.map(project => {
+        let imageUrl = project.image;
+        
+        // Ensure proper image path formatting
+        if (imageUrl && !imageUrl.startsWith('data:') && !imageUrl.startsWith('http')) {
+            if (!imageUrl.startsWith('uploads/')) {
+                imageUrl = './' + imageUrl;
+            }
+        }
+        
+        return `
         <div class="project-card" onclick="openProjectDetail(${project.id})">
-            <div class="project-image" style="background-image: url('${project.image}'); background-size: cover; background-position: center;">
+            <div class="project-image" style="background-image: url('${imageUrl}'); background-size: cover; background-position: center; background-repeat: no-repeat;">
                 <div class="project-overlay">
                     <span class="project-tag">${project.category}</span>
                 </div>
@@ -317,7 +402,7 @@ function generateProjectsGrid() {
                 <p>${project.overview}</p>
             </div>
         </div>
-    `).join('');
+    `}).join('');
 }
 
 // ============================================
@@ -660,6 +745,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                 openProjectDetail(projectId);
             }
         };
+    });
+    
+    // ============================================
+    // RE-INITIALIZE GALLERY ON WINDOW RESIZE
+    // ============================================
+    let resizeTimeout;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(() => {
+            // Only reinitialize if screen size changed significantly
+            initArcGallery();
+        }, 250);
     });
     
     console.log('Portfolio loaded successfully');
