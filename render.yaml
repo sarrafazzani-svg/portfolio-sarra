@@ -3,6 +3,7 @@ services:
     name: sarra-portfolio
     env: node
     plan: free
+    rootDir: ./
     buildCommand: npm install
     startCommand: npm start
     envVars:
